@@ -2,10 +2,10 @@
   "C_Cpp.intelliSenseEngine": "default",
   "idf.espIdfPathWin": "d:\\Espressif\\v5.2\\esp-idf",
   "idf.pythonInstallPath": "d:\\Espressif\\tools\\tools\\idf-python\\3.11.2\\python.exe",
-  "idf.openOcdConfigs": [
-    "board/esp32s3-builtin.cfg"
-  ],
-  "idf.portWin": "COM36",
+  // "idf.openOcdConfigs": [
+  //   "board/esp32s3-builtin.cfg"
+  // ],
+  "idf.portWin": "COM75",
   "idf.toolsPathWin": "D:\\Espressif\\tools",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -27,5 +27,36 @@
       "command": "extension.execute",
       "priority": 4
     }
-  ]
+  ],
+  "files.associations": {
+    "bitset": "c",
+    "string_view": "c",
+    "regex": "c",
+    "cstdlib": "c",
+    "array": "c",
+    "string": "c",
+    "span": "c",
+    "esp_system.h": "c",
+    "esp_efuse.h": "c",
+    "esp_efuse_chip.h": "c",
+    "littlefs_ops.h": "c",
+    "atomic": "c",
+    "chrono": "c",
+    "complex": "c",
+    "deque": "c",
+    "forward_list": "c",
+    "list": "c",
+    "unordered_map": "c",
+    "vector": "c",
+    "internet": "c",
+    "iterator": "c",
+    "memory_resource": "c",
+    "optional": "c",
+    "format": "c",
+    "initializer_list": "c",
+    "stop_token": "c",
+    "text_encoding": "c",
+    "type_traits": "c"
+  },
+  "idf.flashType": "UART"
 }
