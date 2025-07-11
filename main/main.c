@@ -5,9 +5,11 @@
 
 #include "net_config.h"
 #include "littlefs_ops.h"
+#include "collect_device.h"
+#include "led.h"
 
 uint16_t cofig_data[5] = {
-    0x0800,0x1400,0x0100,0x0200,0x0100
+    ((DEVICE_ID>>8)&0xFF)|((DEVICE_ID&0xFF)<<8),0x1400,0x0100,0x0200,0x0100
 };
 uint16_t data_reg[9] = {
     0xE02E,0x10A7,0x2003,0x0300,0x0100,0x1600,0xF401,0xf401,0x0000
@@ -18,6 +20,8 @@ void app_main(void)
     littlefs_ops_init();
     modbus_generate_crcTable();             //生成CRC表
     rs485_driver_init(&rs485_driver);       //初始化RS485串口驱动
+    collect_device_init();
+    led_init();
 
     modbus_reg_write(0x0000,cofig_data,5);
     modbus_reg_write(0x1000,data_reg,9);

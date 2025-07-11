@@ -9,11 +9,13 @@ uint16_t config_reg_table[REG_TABLE_LEN];
 uint16_t data_reg_table[REG_TABLE_LEN];
 uint16_t result_reg_table[REG_TABLE_LEN];
 uint16_t info_reg_table[REG_TABLE_LEN];
+uint16_t calibration_reg_table[REG_TABLE_LEN];
 
 #define  MODBUS_ADDR_IDX        0
 #define  MODBUS_FUNCODE_IDX     1
 #define  REG_START_ADDR_IDX     2
 #define  REG_NUM_IDX            4
+#define  REG_DATA_IDX           6
 #define  MODBUS_CRC_IDX         6
 
 #define  MODBUS_READ_CONFIG_REG_CMD        0x03
@@ -21,7 +23,7 @@ uint16_t info_reg_table[REG_TABLE_LEN];
 #define  MODBUS_WRITE_CONFIG_REG_CMD       0x10
 
 /*public 文件外部接口*/
-uint8_t modbus_addr = 8;
+uint8_t modbus_addr = DEVICE_ID;
 
 /*生成CRC-16表*/
 void modbus_generate_crcTable(void) {
@@ -96,6 +98,7 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
     uint8_t ack_msg[256] = {0};
     uint16_t pos = 0,cal_crc = 0;
     uint16_t *ack_reg = NULL;
+    static uint16_t heart = 0;
     if(num > REG_TABLE_LEN){
         /* 寄存器数量错误 */
         modbus_error_ask(cmd,0x03);
@@ -106,18 +109,22 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
         ack_reg = &config_reg_table[addr];
     }else if(addr<0x2000){
         ack_reg = &data_reg_table[addr-0x1000];
+        heart++;
+        ack_reg[10] = heart>>8 | (heart&0xff)<<8;
     }else if(addr<0x3000){
         ack_reg = &result_reg_table[addr-0x2000];
     }else if(addr<0x4000){
         ack_reg = &info_reg_table[addr-0x3000];
-    }else{
+    }else if(addr<0x5000){
+		ack_reg = &calibration_reg_table[addr-0x4000];
+	}else{
         /* 非法地址 */
         modbus_error_ask(cmd,0x02);
         return;
     }
     ack_msg[pos++] = modbus_addr;
     ack_msg[pos++] = cmd;
-    // ack_msg[pos++] = num*2>>8;
+    ack_msg[pos++] = num*2>>8;
     ack_msg[pos++] = num*2&0xFF;
     memcpy(&ack_msg[pos],ack_reg,num*2);
     pos += num*2;
@@ -143,18 +150,38 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     if(addr<0x1000){
         ack_reg = &config_reg_table[addr];
-    }else{
+    }else if(addr<0x5000 && addr>=0x4000){
+		ack_reg = &calibration_reg_table[addr-0x4000];
+	}else{
         /* 非法地址 */
         modbus_error_ask(cmd,0x02);
         return;
     }
-    memcpy(ack_reg,data,num*2);
+
+    /*校准寄存器访问标识判断*/
+	uint16_t open_flag = 0;
+	if(addr == 0x4000){
+		open_flag = data[REG_DATA_IDX]<<8 | data[REG_DATA_IDX+1];
+	}else{
+		open_flag = ((ack_reg[0]&0xFF)<<8) | ((ack_reg[0]>>8)&0xFF);
+	}
+	if(addr >= 0x4000 && open_flag != 1){
+		/* 地址不可访问 */
+        modbus_error_ask(cmd,0x04);
+        return;
+	}else if(open_flag == 1)
+	{
+		/*设置校准系数保存标志*/
+		// gas_param_save_flag_set();
+	}
+
+    memcpy(ack_reg,&data[REG_DATA_IDX],num*2);
 
     ack_msg[pos++] = modbus_addr;
     ack_msg[pos++] = cmd;
     ack_msg[pos++] = addr>>8;
     ack_msg[pos++] = addr&0xFF;
-    // ack_msg[pos++] = num>>8;
+    ack_msg[pos++] = num>>8;
     ack_msg[pos++] = num&0xFF;
     cal_crc = modbus_calculate_crc(ack_msg,pos);
     ack_msg[pos++] = cal_crc&0xFF;
