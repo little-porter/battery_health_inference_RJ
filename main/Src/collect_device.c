@@ -46,15 +46,35 @@ void collect_device_init(void)
     xTaskCreatePinnedToCore(collect_recive_task_handler,"rs485_recive_task",1024*5,NULL,5,NULL,0);
 }
 
+typedef union _u_float_u8
+{
+    /* data */
+    float f_data;
+    uint8_t u8_data[4];
+}u_float_u8_t;
+
 
 void collect_send_task_handler(void *pvParameters)
 {
+    u_float_u8_t co_k,co_b,h2_k,h2_b;
+    co_k.f_data = 1,co_b.f_data = 1,h2_k.f_data = 1,h2_b.f_data=1;
     uint8_t data[8] = {0x01, 0x03, 0x10, 0x00, 0x00, 0x0A, 0xC1, 0x0D};
-    uint16_t len = 8;
+    uint8_t data2[26] = {0x01, 0x10, 0x40, 0x00, 0x00, 0x09,0x00, 0x01,  \
+                        co_k.u8_data[3],co_k.u8_data[2],co_k.u8_data[1],co_k.u8_data[0], \
+                        co_b.u8_data[3],co_b.u8_data[2],co_b.u8_data[1],co_b.u8_data[0], \
+                        h2_k.u8_data[3],h2_k.u8_data[2],h2_k.u8_data[1],h2_k.u8_data[0], \
+                        h2_b.u8_data[3],h2_b.u8_data[2],h2_b.u8_data[1],h2_b.u8_data[0], \
+                        0xC3, 0x21};
+    for(int i=0; i<26; i++)
+    {
+        printf("%02x ",data2[i]);
+    }
+    printf("\r\n");
+    uint16_t len = 26;
 
     while(1)
     {
-        uart_write_bytes(COLLECT_UART_PORT,data,len);
+        uart_write_bytes(COLLECT_UART_PORT,data2,len);
         uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -68,7 +88,9 @@ void collect_msg_deal(uint8_t *data,uint16_t length)
     if(data[COLLECT_DEVICE_ADDR_IDX] != COLLECT_DEVICE_ADDR) return;
     crc = data[length-2] | data[length-1]<<8;
     cal_crc = modbus_calculate_crc(data,length-2);
-    // if(crc != cal_crc) return;
+    if(crc != cal_crc) return;
+
+    printf("crc = %04x , cal_crc = %04x\r\n",crc,cal_crc);
    
     uint16_t num = data[REG_NUM_IDX]<<8 | data[REG_NUM_IDX+1];
     
