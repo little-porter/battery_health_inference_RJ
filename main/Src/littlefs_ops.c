@@ -1,6 +1,7 @@
 #include "littlefs_ops.h"
 #include <dirent.h>
 #include "esp_flash.h"
+#include <unistd.h> // unlink 函数在此头文件中声明
 
 static const char *TAG = "littlefs_ops";
 
@@ -137,7 +138,46 @@ bool littlefs_ops_write_file(const char *file_name, const char *file_data,uint32
     return true;
 }
 
+bool littlefs_ops_write_file_append(const char *file_name, const char *file_data,uint32_t data_len)
+{ 
+    char *file_path = heap_caps_malloc(strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, MALLOC_CAP_SPIRAM);
+    memset(file_path, 0, strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2);
+    snprintf(file_path, strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, "%s/%s", LITTLEFS_DIRECTORY, file_name);
+    ESP_LOGI(TAG,"file_path:%s,data_len:%d",file_path,(int)data_len);
+    FILE* file = fopen(file_path, "a");
+    if(file == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return false;
+    }
 
+    size_t size = fwrite(file_data, 1, data_len, file);
+    if(size != data_len)
+    {
+        ESP_LOGE(TAG, "Failed to write to file");
+        heap_caps_free(file_path);
+        fclose(file);
+        return false;
+    }
+
+    heap_caps_free(file_path);
+    fclose(file);
+    return true;
+}
+
+bool littlefs_ops_remove_file(const char *file_name)
+{ 
+    char *file_path = heap_caps_malloc(strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, MALLOC_CAP_SPIRAM);
+    memset(file_path, 0, strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2);
+    snprintf(file_path, strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, "%s/%s", LITTLEFS_DIRECTORY, file_name);
+
+    if (unlink(file_path) == -1) {
+        return false;
+    } else {
+        printf("File deleted successfully.\n");
+        return true;
+    }
+}
 
 void littlefs_test(void)
 {

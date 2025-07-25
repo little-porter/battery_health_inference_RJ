@@ -33,7 +33,7 @@ void rs485_uart_init(rs485_driver_t *rs485_drv)
     uart_set_pin(RS485_UART_PORT, RS485_UART_TX_PIN, RS485_UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
     rs485_drv->uart_queue = NULL;
-    uart_driver_install(RS485_UART_PORT, 1024, 1024, 10, &rs485_drv->uart_queue, 0);
+    uart_driver_install(RS485_UART_PORT, 1024*2, 1024, 10, &rs485_drv->uart_queue, 0);
     // uart_driver_install(RS485_UART_PORT, 1024, 1024, 0, NULL, 0);
 
     //中断使能
@@ -121,43 +121,34 @@ void rs485_send_task_handler(void *pvParameters)
 void rs485_recive_task_handler(void *pvParameters)
 {
     rs485_driver_t *rs485_drv = (rs485_driver_t *)pvParameters;
-    uint8_t rx_data[200];
+    uint8_t rx_data[2048];
 #ifdef USE_BMS_DATA
     bms_msg_t bms_msg;
 #endif
     while(1)
     {
-        uart_event_t event;
+        // uart_event_t event;
         int rx_bytes = 0;
-        if(pdTRUE == xQueueReceive(rs485_drv->uart_queue,&event,portMAX_DELAY))
-        {
-            switch (event.type)
-            {
-                case UART_DATA:
-                    rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, event.size, 100 / portTICK_PERIOD_MS);
-                    modbus_msg_deal_handler(rx_data,rx_bytes);
-                    // rx_data[rx_bytes] = 0x00;
-                    // ESP_LOGI(TAG,"*********************************************");
-                    // ESP_LOGI(TAG,"rs485 接收数量：%d\r\n",rx_bytes);
-#ifdef USE_BMS_DATA
-                    memset(&bms_msg,0,sizeof(bms_msg_t));
-                    memcpy(bms_msg.data,rx_data,rx_bytes);
-                    bms_msg.num = rx_bytes;
-                    if(bms_rx_queue != NULL)
-                        xQueueSend(bms_rx_queue,&bms_msg,portMAX_DELAY);
-#endif
-#ifdef USE_NOT_DEVCE
-                    memset(rs485_drv->rx_fifo.data[rs485_drv->rx_fifo.tail],0,sizeof(rs485_fifo_t));
-                    memcpy(rs485_drv->rx_fifo.data[rs485_drv->rx_fifo.tail],rx_data,rx_bytes);
-                    rs485_drv->rx_fifo.len[rs485_drv->rx_fifo.tail] = rx_bytes;
-                    rs485_drv->rx_fifo.tail++;
-                    rs485_drv->rx_fifo.tail %= RS485_FIFO_NUM;
-#endif
-                break;
-                default:
-                break;
-            }  
-        }
+        rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, 2408, 250);
+        if(0 == rx_bytes)  continue;
+        modbus_msg_deal_handler(rx_data,rx_bytes);
+
+        // if(pdTRUE == xQueueReceive(rs485_drv->uart_queue,&event,portMAX_DELAY))
+        // {
+        //     switch (event.type)
+        //     {
+        //         case UART_DATA:
+        //             rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, event.size, 100 / portTICK_PERIOD_MS);
+        //             modbus_msg_deal_handler(rx_data,rx_bytes);
+        //             // rx_data[rx_bytes] = 0x00;
+        //             // ESP_LOGI(TAG,"*********************************************");
+        //             // ESP_LOGI(TAG,"rs485 接收数量：%d\r\n",rx_bytes);
+
+        //         break;
+        //         default:
+        //         break;
+        //     }  
+        // }
 
         // vTaskDelay(pdMS_TO_TICKS(20));
     }

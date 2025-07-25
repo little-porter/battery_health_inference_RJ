@@ -1,4 +1,6 @@
 #include "modbus.h"
+#include "ota.h"
+#include "sys.h"
 
 /*private 文件内部私有*/
 #define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优先)
@@ -18,12 +20,16 @@ uint16_t calibration_reg_table[REG_TABLE_LEN];
 #define  REG_DATA_IDX           6
 #define  MODBUS_CRC_IDX         6
 
-#define  MODBUS_READ_CONFIG_REG_CMD        0x03
-#define  MODBUS_READ_DATA_REG_CMD          0x04
-#define  MODBUS_WRITE_CONFIG_REG_CMD       0x10
+#define  MODBUS_READ_CONFIG_REG_CMD        (uint8_t)0x03
+#define  MODBUS_READ_DATA_REG_CMD          (uint8_t)0x04
+#define  MODBUS_WRITE_CONFIG_REG_CMD       (uint8_t)0x10
+#define  MODBUS_SOFT_UPGRADE_CMD           (uint8_t)0xff
 
 /*public 文件外部接口*/
 uint8_t modbus_addr = DEVICE_ID;
+uint8_t broadcast_addr = 0xff;
+
+uint8_t collect_calibrate_flag = 0;
 
 /*生成CRC-16表*/
 void modbus_generate_crcTable(void) {
@@ -45,7 +51,7 @@ void modbus_generate_crcTable(void) {
 }
 
 /*计算CRC*/
-uint16_t modbus_calculate_crc(uint8_t *data,uint16_t length)
+uint16_t modbus_calculate_crc(uint8_t *data,uint32_t length)
 {
     uint16_t crc = 0xFFFF;
 
@@ -57,8 +63,19 @@ uint16_t modbus_calculate_crc(uint8_t *data,uint16_t length)
     return crc;
 }
 
+void modbus_reg_data_reverse(uint16_t *reg,uint16_t num)
+{
+	uint16_t tem = 0;
+	for(int i=0; i<num; i++){
+		tem = ((*reg>>8)&0xFF) | ((*reg&0xFF)<<8);
+		*reg = tem;
+		reg++;
+	}
+}
+
 void modbus_reg_write(uint16_t addr,uint16_t *data,uint16_t num)
 {
+    if(num ==0 || num > REG_TABLE_LEN) return;
     uint16_t *write_reg = NULL;
     if(addr<0x1000){
         write_reg = &config_reg_table[addr];
@@ -68,17 +85,85 @@ void modbus_reg_write(uint16_t addr,uint16_t *data,uint16_t num)
         write_reg = &result_reg_table[addr-0x2000];
     }else if(addr<0x4000){
         write_reg = &info_reg_table[addr-0x3000];
-    }else{
+    }else if(addr<0x5000){
+		write_reg = &calibration_reg_table[addr-0x4000];
+	}else{
         /* 非法地址 */
         return;
     }
-    memcpy(write_reg,data,num*2);    
+    memcpy(write_reg,data,num*2); 
+	modbus_reg_data_reverse(write_reg,num);	
 }
 
+void modbus_reg_write_no_reverse(uint16_t addr,uint16_t *data,uint16_t num)
+{
+    if(num ==0 || num > REG_TABLE_LEN) return;
+    uint16_t *write_reg = NULL;
+    if(addr<0x1000){
+        write_reg = &config_reg_table[addr];
+    }else if(addr<0x2000){
+        write_reg = &data_reg_table[addr-0x1000];
+    }else if(addr<0x3000){
+        write_reg = &result_reg_table[addr-0x2000];
+    }else if(addr<0x4000){
+        write_reg = &info_reg_table[addr-0x3000];
+    }else if(addr<0x5000){
+		write_reg = &calibration_reg_table[addr-0x4000];
+	}else{
+        /* 非法地址 */
+        return;
+    }
+    memcpy(write_reg,data,num*2); 
+}
 
+void modbus_reg_read(uint16_t addr,uint16_t *data,uint16_t num)
+{
+	if(num ==0 || num > REG_TABLE_LEN)	return;
+	uint16_t *read_reg = NULL;
+	uint16_t temp_reg[REG_TABLE_LEN] = {0};
+    if(addr<0x1000){
+        read_reg = &config_reg_table[addr];
+    }else if(addr<0x2000){
+        read_reg = &data_reg_table[addr-0x1000];
+    }else if(addr<0x3000){
+        read_reg = &result_reg_table[addr-0x2000];
+    }else if(addr<0x4000){
+        read_reg = &info_reg_table[addr-0x3000];
+    }else if(addr<0x5000){
+		read_reg = &calibration_reg_table[addr-0x4000];
+	}else{
+        /* 非法地址 */
+        return;
+    }
+	
+	memcpy(temp_reg,read_reg,num*2);
+	modbus_reg_data_reverse(temp_reg,num);
+	memcpy(data,temp_reg,num*2);
+}
 
-
-
+void modbus_reg_read_no_reverse(uint16_t addr,uint16_t *data,uint16_t num)
+{
+	if(num ==0 || num > REG_TABLE_LEN)	return;
+	uint16_t *read_reg = NULL;
+	uint16_t temp_reg[REG_TABLE_LEN] = {0};
+    if(addr<0x1000){
+        read_reg = &config_reg_table[addr];
+    }else if(addr<0x2000){
+        read_reg = &data_reg_table[addr-0x1000];
+    }else if(addr<0x3000){
+        read_reg = &result_reg_table[addr-0x2000];
+    }else if(addr<0x4000){
+        read_reg = &info_reg_table[addr-0x3000];
+    }else if(addr<0x5000){
+		read_reg = &calibration_reg_table[addr-0x4000];
+	}else{
+        /* 非法地址 */
+        return;
+    }
+	
+	memcpy(temp_reg,read_reg,num*2);
+	memcpy(data,temp_reg,num*2);
+}
 
 void modbus_error_ask(uint8_t cmd,uint8_t error_code)
 {
@@ -110,7 +195,7 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
     }else if(addr<0x2000){
         ack_reg = &data_reg_table[addr-0x1000];
         heart++;
-        ack_reg[10] = heart>>8 | (heart&0xff)<<8;
+        ack_reg[11] = heart>>8 | (heart&0xff)<<8;
     }else if(addr<0x3000){
         ack_reg = &result_reg_table[addr-0x2000];
     }else if(addr<0x4000){
@@ -159,21 +244,18 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
     }
 
     /*校准寄存器访问标识判断*/
+
 	uint16_t open_flag = 0;
 	if(addr == 0x4000){
 		open_flag = data[REG_DATA_IDX]<<8 | data[REG_DATA_IDX+1];
 	}else{
 		open_flag = ((ack_reg[0]&0xFF)<<8) | ((ack_reg[0]>>8)&0xFF);
 	}
-	if(addr >= 0x4000 && open_flag != 1){
+	if(addr >= 0x4000 && open_flag != 1 && num != 1){
 		/* 地址不可访问 */
         modbus_error_ask(cmd,0x04);
         return;
-	}else if(open_flag == 1)
-	{
-		/*设置校准系数保存标志*/
-		// gas_param_save_flag_set();
-	}
+	}else 
 
     memcpy(ack_reg,&data[REG_DATA_IDX],num*2);
 
@@ -190,13 +272,42 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     rs485_data_send(ack_msg,pos);
 
+    if(open_flag == 1)
+	{
+		/*设置校准系数保存标志*/
+        collect_calibrate_flag = 1;
+	}
 }
 
+void modbus_soft_upgrade_handler(uint8_t *data,uint16_t length)
+{
+    
+    uint16_t data_num = (data[6]<<8) + data[7];
+    uint8_t  frm_flag = data[3];
+    uint8_t  frm_type = data[2];
+    if(frm_type != 0x01 && frm_type != 0x02)        return;
+
+    if(frm_flag == 0x00){       //升级开始标志
+        iap_flag_start();
+        return;
+    }else if(frm_flag == 0x10){ //升级数据
+        iap_flag_upgrading();
+    }else if(frm_flag == 0x20){ //升级结束标志
+        iap_flag_finish();
+        ota_crc_set((data[9]<<8) | data[8]);
+        ESP_LOGI("OTA_CRC", "OTA_CRC:0x%x",(data[9]<<8) | data[8]);
+        return;
+    }else{return;}
+
+    // ota_push_msg_to_queue(&data[8],data_num,portMAX_DELAY);
+    ota_data_write_to_fifo(&inf_ota_fifo,&data[8],data_num);
+    printf("OTA_PUSH_DATA: %d\n",data_num);
+}
 
 void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
 {
     uint16_t crc=0,cal_crc=0;
-    if(data[MODBUS_ADDR_IDX] != modbus_addr) return;
+    if((data[MODBUS_ADDR_IDX] != modbus_addr) && (data[MODBUS_ADDR_IDX] != broadcast_addr)) return;
     crc = data[length-2] | data[length-1]<<8;
     cal_crc = modbus_calculate_crc(data,length-2);
     if(crc != cal_crc) return;
@@ -212,6 +323,10 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
         break;
     case MODBUS_WRITE_CONFIG_REG_CMD:
         modbus_write_ack(cmd,addr,num,data);
+        break;
+    case MODBUS_SOFT_UPGRADE_CMD:
+        modbus_soft_upgrade_handler(data,length);
+        ESP_LOGI("OTA", "OTA recive data");
         break;
     default:
         /*功能码错误*/

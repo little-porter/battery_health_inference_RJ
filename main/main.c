@@ -8,6 +8,8 @@
 #include "collect_device.h"
 #include "led.h"
 
+#include "ota.h"
+
 uint16_t cofig_data[5] = {
     ((DEVICE_ID>>8)&0xFF)|((DEVICE_ID&0xFF)<<8),0x1400,0x0100,0x0200,0x0100
 };
@@ -22,6 +24,7 @@ void app_main(void)
     rs485_driver_init(&rs485_driver);       //初始化RS485串口驱动
     collect_device_init();
     led_init();
+    // ota_init();
 
     modbus_reg_write(0x0000,cofig_data,5);
     modbus_reg_write(0x1000,data_reg,9);
@@ -46,5 +49,17 @@ void app_main(void)
         time_ms++;
         vTaskDelay(5000 / portTICK_PERIOD_MS);
         ESP_LOGI("device","run time %d",(int)time_ms);
+        int temp = 0;
+        uint16_t temp1 = 0,temp2 = 0,inres = 0,smk = 0,h2 = 0,co = 0,humidity = 0;
+        modbus_reg_read(0x1009,&temp1,1);
+        modbus_reg_read(0x1005,&temp2,1);
+        modbus_reg_read(0x1002,&inres,1);
+        modbus_reg_read(0x1008,&smk,1);
+        modbus_reg_read(0x1007,&h2,1);
+        modbus_reg_read(0x1006,&co,1);
+         modbus_reg_read(0x100A,&humidity,1);
+        // ESP_LOGI("device","temp1 %d, temp2 %d, inres %d, smk %d, h2 %d, co %d, humidity %d\n",temp1,temp2,inres,smk,h2,co,humidity);
+
+        // iap_task();
     }
 }

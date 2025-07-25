@@ -19,6 +19,9 @@ void littlefs_test(void);
 
 char *littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_data);
 bool littlefs_ops_write_file(const char *file_name, const char *file_data,uint32_t data_len);
+bool littlefs_ops_write_file_append(const char *file_name, const char *file_data,uint32_t data_len);
+
+bool littlefs_ops_remove_file(const char *file_name);
 
 #endif
 
