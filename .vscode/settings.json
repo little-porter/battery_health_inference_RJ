@@ -5,7 +5,7 @@
   // "idf.openOcdConfigs": [
   //   "board/esp32s3-builtin.cfg"
   // ],
-  "idf.portWin": "COM39",
+  "idf.portWin": "COM45",
   "idf.toolsPathWin": "D:\\Espressif\\tools",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -28,42 +28,26 @@
       "priority": 4
     }
   ],
+  "idf.flashType": "UART",
   "files.associations": {
-    "bitset": "c",
-    "string_view": "c",
+    "esp_partition.h": "c",
+    "sstream": "c",
     "regex": "c",
-    "cstdlib": "c",
     "array": "c",
     "string": "c",
+    "string_view": "c",
     "span": "c",
-    "esp_system.h": "c",
-    "esp_efuse.h": "c",
-    "esp_efuse_chip.h": "c",
-    "littlefs_ops.h": "c",
-    "atomic": "c",
-    "chrono": "c",
-    "complex": "c",
-    "deque": "c",
-    "forward_list": "c",
-    "list": "c",
-    "unordered_map": "c",
-    "vector": "c",
+    "uart.h": "c",
+    "compare": "c",
+    "cstdint": "c",
+    "buffer": "c",
+    "bitset": "c",
     "internet": "c",
-    "iterator": "c",
-    "memory_resource": "c",
-    "optional": "c",
+    "socket": "c",
     "format": "c",
     "initializer_list": "c",
-    "stop_token": "c",
-    "text_encoding": "c",
-    "type_traits": "c",
-    "rs485.h": "c",
-    "uart.h": "c",
-    "modbus.h": "c",
-    "led.h": "c",
-    "buffer": "c",
-    "socket": "c",
-    "esp_app_format.h": "c"
-  },
-  "idf.flashType": "UART"
+    "ratio": "c",
+    "chrono": "c",
+    "collect_device.h": "c"
+  }
 }

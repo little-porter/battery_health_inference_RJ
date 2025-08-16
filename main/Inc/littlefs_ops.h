@@ -3,6 +3,7 @@
 #define __LITTLEFS_OPS_H__
 
 #include "sys.h"
+#include "project.h"
 
 #include "esp_littlefs.h"
 
@@ -14,10 +15,10 @@ typedef struct
 
 
 void littlefs_ops_init(void);
-
+void littlefs_ops_read_file_info(void);
 void littlefs_test(void);
 
-char *littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_data);
+bool littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_data);
 bool littlefs_ops_write_file(const char *file_name, const char *file_data,uint32_t data_len);
 bool littlefs_ops_write_file_append(const char *file_name, const char *file_data,uint32_t data_len);
 

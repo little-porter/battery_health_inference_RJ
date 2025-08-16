@@ -1,12 +1,14 @@
 #include "modbus.h"
 #include "ota.h"
+#include "iap.h"
 #include "sys.h"
+#include "sysEvent.h"
 
 /*private 文件内部私有*/
 #define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优先)
 uint16_t crcTable[256];     // CRC-16 table
 
-#define  REG_TABLE_LEN    20
+#define  REG_TABLE_LEN    100
 uint16_t config_reg_table[REG_TABLE_LEN];
 uint16_t data_reg_table[REG_TABLE_LEN];
 uint16_t result_reg_table[REG_TABLE_LEN];
@@ -28,8 +30,6 @@ uint16_t calibration_reg_table[REG_TABLE_LEN];
 /*public 文件外部接口*/
 uint8_t modbus_addr = DEVICE_ID;
 uint8_t broadcast_addr = 0xff;
-
-uint8_t collect_calibrate_flag = 0;
 
 /*生成CRC-16表*/
 void modbus_generate_crcTable(void) {
@@ -55,6 +55,17 @@ uint16_t modbus_calculate_crc(uint8_t *data,uint32_t length)
 {
     uint16_t crc = 0xFFFF;
 
+    for(uint16_t i = 0; i < length; i++){
+        uint16_t index = (crc ^ data[i]) & 0xFF;
+        crc = (crc >> 8) ^ crcTable[index];
+    }
+
+    return crc;
+}
+
+uint16_t modbus_calculate_crc_ota(uint16_t cal_crc,uint8_t *data,uint32_t length)
+{
+    uint16_t crc = cal_crc;
     for(uint16_t i = 0; i < length; i++){
         uint16_t index = (crc ^ data[i]) & 0xFF;
         crc = (crc >> 8) ^ crcTable[index];
@@ -235,6 +246,7 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     if(addr<0x1000){
         ack_reg = &config_reg_table[addr];
+        sysEvent_set(sys_cfg_event_group,SYS_CFG_SAVE_EVENT_BIT);        //发送保存系统参数事件
     }else if(addr<0x5000 && addr>=0x4000){
 		ack_reg = &calibration_reg_table[addr-0x4000];
 	}else{
@@ -275,34 +287,11 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
     if(open_flag == 1)
 	{
 		/*设置校准系数保存标志*/
-        collect_calibrate_flag = 1;
+        
 	}
 }
 
-void modbus_soft_upgrade_handler(uint8_t *data,uint16_t length)
-{
-    
-    uint16_t data_num = (data[6]<<8) + data[7];
-    uint8_t  frm_flag = data[3];
-    uint8_t  frm_type = data[2];
-    if(frm_type != 0x01 && frm_type != 0x02)        return;
 
-    if(frm_flag == 0x00){       //升级开始标志
-        iap_flag_start();
-        return;
-    }else if(frm_flag == 0x10){ //升级数据
-        iap_flag_upgrading();
-    }else if(frm_flag == 0x20){ //升级结束标志
-        iap_flag_finish();
-        ota_crc_set((data[9]<<8) | data[8]);
-        ESP_LOGI("OTA_CRC", "OTA_CRC:0x%x",(data[9]<<8) | data[8]);
-        return;
-    }else{return;}
-
-    // ota_push_msg_to_queue(&data[8],data_num,portMAX_DELAY);
-    ota_data_write_to_fifo(&inf_ota_fifo,&data[8],data_num);
-    printf("OTA_PUSH_DATA: %d\n",data_num);
-}
 
 void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
 {
@@ -325,8 +314,13 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
         modbus_write_ack(cmd,addr,num,data);
         break;
     case MODBUS_SOFT_UPGRADE_CMD:
-        modbus_soft_upgrade_handler(data,length);
-        ESP_LOGI("OTA", "OTA recive data");
+        if(data[2] == 0x01){
+            ota_data_deal_handler(data,length);
+        }else if(data[2] == 0x02){
+            iap_msg_deal_handler(data,length);
+        }else{;}
+        
+        // ESP_LOGI("OTA", "OTA recive data");
         break;
     default:
         /*功能码错误*/

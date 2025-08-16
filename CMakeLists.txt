@@ -10,11 +10,6 @@ set(PROJECT_INC_DIRS "." "./Inc")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-set(PROJECT_VER "2.0.0")
-# string(TIMESTAMP COMPILE_TIME "2025-7-19 11:11:11")
-# add_definitions(-DCOMPILE_TIME="${COMPILE_TIME}")
-
-
-project(battery_health_inference_RJ)
-
+set(PROJECT_VER "2.1.4")
+project(battery_inference_ota)
 

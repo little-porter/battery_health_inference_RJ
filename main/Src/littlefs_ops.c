@@ -78,8 +78,9 @@ void littlefs_ops_init(void)
 
 
 
-char *littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_data)
+bool littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_data)
 {
+    bool ret = true;
     char *file_path = heap_caps_malloc(strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, MALLOC_CAP_SPIRAM);
     snprintf(file_path, strlen(file_name) + strlen(LITTLEFS_DIRECTORY) + 2, "%s/%s", LITTLEFS_DIRECTORY, file_name);
     ESP_LOGI(TAG,"file_path:%s",file_path);
@@ -87,7 +88,8 @@ char *littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_da
     if(file == NULL)
     {
         ESP_LOGE(TAG, "Failed to open file for reading");
-        return NULL;
+        ret = false;
+        return ret;
     }
     fseek(file, 0L, SEEK_END);  // 将文件指针移动到文件末尾
     size_t size = ftell(file);
@@ -103,12 +105,13 @@ char *littlefs_ops_read_file(const char *file_name,littlefs_file_data_t *file_da
         heap_caps_free(file_path);
         heap_caps_free(file_data->data);
         fclose(file);
-        return NULL;
+        ret = false;
+        return ret;
     }
     heap_caps_free(file_path);
     fclose(file);
 
-    return  file_data;
+    return  ret;
 }
 
 bool littlefs_ops_write_file(const char *file_name, const char *file_data,uint32_t data_len)
@@ -183,7 +186,8 @@ void littlefs_test(void)
 {
     // littlefs_ops_write_file("test.txt", "Hello two world!", strlen("Hello two world!"));
     littlefs_file_data_t file;
-    char *str = littlefs_ops_read_file("template.hex",&file);
+    // char *str = littlefs_ops_read_file("template.hex",&file);
+    char *str = NULL;
     if(str == NULL)
     {
         ESP_LOGI(TAG, "Failed to read file");

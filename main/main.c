@@ -1,65 +1,55 @@
 #include <stdio.h>
+#include "sys.h"
+#include "sysEvent.h"
+#include "project.h"
+#include "littlefs_ops.h"
 
-#include "modbus.h"
 #include "rs485.h"
+#include "modbus.h"
+#include "ota.h"
+#include "iap.h"
+#include "led.h"
+#include "collect_device.h"
 
 #include "net_config.h"
-#include "littlefs_ops.h"
-#include "collect_device.h"
-#include "led.h"
 
-#include "ota.h"
+static const char *TAG = "PRJ_MAIN";
 
-uint16_t cofig_data[5] = {
-    ((DEVICE_ID>>8)&0xFF)|((DEVICE_ID&0xFF)<<8),0x1400,0x0100,0x0200,0x0100
-};
-uint16_t data_reg[9] = {
-    0xE02E,0x10A7,0x2003,0x0300,0x0100,0x1600,0xF401,0xf401,0x0000
-};
-
-void app_main(void)
+void collect_device_power_on(void)
 {
-    littlefs_ops_init();
-    modbus_generate_crcTable();             //生成CRC表
-    rs485_driver_init(&rs485_driver);       //初始化RS485串口驱动
-    collect_device_init();
-    led_init();
-    // ota_init();
-
-    modbus_reg_write(0x0000,cofig_data,5);
-    modbus_reg_write(0x1000,data_reg,9);
-
-    uint32_t time_ms = 0;
-
-     // 获取ESP32的芯片ID
-    // net_config_init();
-
     gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_INTR_DISABLE; // 禁用中断
-    io_conf.mode = GPIO_MODE_OUTPUT; // 设置为输出模式
+    io_conf.intr_type = GPIO_INTR_DISABLE; // 禁用�?�?
+    io_conf.mode = GPIO_MODE_OUTPUT; // 设置为输出模�?
     io_conf.pin_bit_mask = (1ULL << GPIO_NUM_46); // 选择具体的GPIO
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE; // 禁用下拉电阻
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE; // 禁用上拉电阻
     gpio_config(&io_conf);
     gpio_set_level(GPIO_NUM_46,1);
-
-
-    while(1)
-    {
-        time_ms++;
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-        ESP_LOGI("device","run time %d",(int)time_ms);
-        int temp = 0;
-        uint16_t temp1 = 0,temp2 = 0,inres = 0,smk = 0,h2 = 0,co = 0,humidity = 0;
-        modbus_reg_read(0x1009,&temp1,1);
-        modbus_reg_read(0x1005,&temp2,1);
-        modbus_reg_read(0x1002,&inres,1);
-        modbus_reg_read(0x1008,&smk,1);
-        modbus_reg_read(0x1007,&h2,1);
-        modbus_reg_read(0x1006,&co,1);
-         modbus_reg_read(0x100A,&humidity,1);
-        // ESP_LOGI("device","temp1 %d, temp2 %d, inres %d, smk %d, h2 %d, co %d, humidity %d\n",temp1,temp2,inres,smk,h2,co,humidity);
-
-        // iap_task();
-    }
 }
+
+
+void app_main(void)
+{
+    modbus_generate_crcTable();
+    sysEvent_init();
+
+    littlefs_ops_init();
+    ota_init();
+    iap_init();
+    rs485_driver_init(&rs485_driver);
+    led_init();
+    net_config_init();
+    collect_device_power_on();
+    collect_device_init();
+
+    while (1)
+    {
+        /* code */
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        littlefs_ops_read_file_info();
+        ESP_LOGI(TAG,"sys running...");
+    }
+    
+}
+
+
