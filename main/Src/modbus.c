@@ -5,7 +5,7 @@
 #include "sysEvent.h"
 
 /*private 文件内部私有*/
-#define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优先)
+#define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优�?)
 uint16_t crcTable[256];     // CRC-16 table
 
 #define  REG_TABLE_LEN    100
@@ -31,7 +31,7 @@ uint16_t calibration_reg_table[REG_TABLE_LEN];
 uint8_t modbus_addr = DEVICE_ID;
 uint8_t broadcast_addr = 0xff;
 
-/*生成CRC-16表*/
+/*生成CRC-16�?*/
 void modbus_generate_crcTable(void) {
     uint16_t polynomial = POLYNOMIAL;
     for (int i = 0; i < 256; i++) 
@@ -48,6 +48,8 @@ void modbus_generate_crcTable(void) {
         }
         crcTable[i] = crc;
     }
+
+    config_reg_table[MODBUS_ADDR_IDX] = modbus_addr<<8;
 }
 
 /*计算CRC*/
@@ -196,7 +198,7 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
     uint16_t *ack_reg = NULL;
     static uint16_t heart = 0;
     if(num > REG_TABLE_LEN){
-        /* 寄存器数量错误 */
+        /* 寄存器数量错�? */
         modbus_error_ask(cmd,0x03);
         return;
     }
@@ -238,7 +240,7 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
     uint16_t *ack_reg = NULL;
 
     if(num > REG_TABLE_LEN){
-        /* 寄存器数量错误 */
+        /* 寄存器数量错�? */
         modbus_error_ask(cmd,0x03);
         return;
     }
@@ -246,7 +248,7 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     if(addr<0x1000){
         ack_reg = &config_reg_table[addr];
-        sysEvent_set(sys_cfg_event_group,SYS_CFG_SAVE_EVENT_BIT);        //发送保存系统参数事件
+        sysEvent_set(sys_cfg_event_group,SYS_CFG_SAVE_EVENT_BIT);        //发送保存系统参数事�?
     }else if(addr<0x5000 && addr>=0x4000){
 		ack_reg = &calibration_reg_table[addr-0x4000];
 	}else{
@@ -255,7 +257,7 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
         return;
     }
 
-    /*校准寄存器访问标识判断*/
+    /*校准寄存器�?�问标识判断*/
 
 	uint16_t open_flag = 0;
 	if(addr == 0x4000){
@@ -323,7 +325,7 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
         // ESP_LOGI("OTA", "OTA recive data");
         break;
     default:
-        /*功能码错误*/
+        /*功能码错�?*/
         modbus_error_ask(cmd,0x01);
         break;
     }

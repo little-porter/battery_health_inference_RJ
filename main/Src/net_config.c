@@ -13,25 +13,25 @@ char *file = "/littlefs/NetConfig.json";
 char *device_file = "device_config.text";
 
 #define REG_MODBUS_ADDR     0x0000
-#define REG_MAC_ADDR        0x0005
-#define REG_SERIAL_ADDR     0x000F
+#define REG_MAC_ADDR        0x0011
+#define REG_SERIAL_ADDR     0x0007
 
 typedef struct _device_config_t
 {
     uint16_t modbus_addr;                       //modbus地址
     uint16_t cap;                               //电池额定容量  
     uint16_t upgrade_flag;                      //升级标志
-    uint16_t device_type;                       //设备类型
-    uint16_t device_addr;                       //设备地址  
+    uint16_t device_type;                       //设�?�类�?
+    uint16_t device_addr;                       //设�?�地址  
     char mac[18];                               //MAC地址 
-    char serial[18];                            //序列号
-    uint16_t h2_threshold;                      //H2报警阈值
-    uint16_t co_threshold;                      //CO报警阈值
-    uint16_t temp_threshold;                    //温度报警阈值
-    uint16_t temp_up_threshold;                 //温度升报警阈值
-    uint16_t voltage_high_threshold;            //电压高报警阈值
-    uint16_t voltage_low_threshold;             //电压低报警阈值
-    uint16_t current_threshold;                 //电流报警阈值
+    char serial[18];                            //序列�?
+    uint16_t h2_threshold;                      //H2报�?�阈�?
+    uint16_t co_threshold;                      //CO报�?�阈�?
+    uint16_t temp_threshold;                    //温度报�?�阈�?
+    uint16_t temp_up_threshold;                 //温度升报警阈�?
+    uint16_t voltage_high_threshold;            //电压高报警阈�?
+    uint16_t voltage_low_threshold;             //电压低报警阈�?
+    uint16_t current_threshold;                 //电流报�?�阈�?
 }device_config_t;
 
 device_config_t device_cfg;
@@ -49,7 +49,7 @@ void net_config_mac_read(void)
     printf("MAC: %s\n", mac);
     for(int i = 0; i < 8; i++){
         int n = snprintf(p,remaining,"%02x ",mac[i]);
-        if (n < 0 || (size_t)n >= remaining) { // 检查错误或缓冲区不足
+        if (n < 0 || (size_t)n >= remaining) { // 检查错�?或缓冲区不足
             break;
         }
         p += n;
@@ -62,7 +62,7 @@ void net_config_mac_read(void)
 
 void net_config_init(void)
 {
-    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设备系统配置任务
+    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设�?�系统配�?任务
 
     littlefs_file_data_t config_file;
     // net_config_mac_read();
