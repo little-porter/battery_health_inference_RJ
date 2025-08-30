@@ -6,11 +6,14 @@
 
 #include "modbus.h"
 
-#define REG_OTA_START_FLAG 0x0003
-#define REG_OTA_VERSION_AA 0x3003
-#define REG_OTA_VERSION_BB 0x3004
-#define REG_OTA_VERSION_CC 0x3005
-#define OTA_OUT_TIME_MS	   10000
+#define REG_OTA_START_FLAG 		0x200F
+#define REG_OTA_VERSION_YEAR 	0x3000
+#define REG_OTA_VERSION_MONTH 	0x3001
+#define REG_OTA_VERSION_DAY 	0x3002
+#define REG_OTA_VERSION_AA 		0x3003
+#define REG_OTA_VERSION_BB 		0x3004
+#define REG_OTA_VERSION_CC 		0x3005
+#define OTA_OUT_TIME_MS	   		10000
 
 static const char *TAG = "PRJ_OTA";
 static const char *app_name = "battery_inference_ota";
@@ -98,7 +101,7 @@ void app_info_check(void)
 			if(esp_ota_get_partition_description(run_partition,&run_app_info) == ESP_OK){
 				ESP_LOGI(TAG,"run_app_info.version:%s\r\n",run_app_info.version);
 				ESP_LOGI(TAG,"run_app_info.project_name:%s\r\n",run_app_info.project_name);
-				if(0 != strcmp(run_app_info.project_name,app_name)){						//判断运行APP软件名称
+				if(0 != strcmp(run_app_info.project_name,app_name)){						//判断运�?�APP�?件名�?
 					 
 				}
 			}
@@ -175,13 +178,13 @@ bool ota_info_head_check(void)
 	bool ret = false;
 	int size = sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
 	uint32_t read_bytes = 0;
-	/*获取校验头 */
+	/*获取校验�? */
 	read_bytes = ota_fifo_data_bytes_read(&app_fifo);
 	vTaskDelay(pdMS_TO_TICKS(10));
 	if(read_bytes < size){
-		ret = false;			/*校验头不全*/
+		ret = false;			/*校验头不�?*/
 	} else{
-		ret = true;				/*校验头全了*/
+		ret = true;				/*校验头全�?*/
 	}
 	return ret;
 	
@@ -205,7 +208,7 @@ bool ota_info_check(void)
 			return ret;
 		}	
 
-		/*校验成功，开始写入*/
+		/*校验成功，开始写�?*/
 		// ota_info.ota_partition = esp_ota_get_next_update_partition(NULL);
 		// ESP_ERROR_CHECK(esp_ota_begin(ota_info.ota_partition, OTA_SIZE_UNKNOWN, &ota_info.ota_handle));
 		ESP_ERROR_CHECK(esp_ota_write(ota_info.ota_handle, data, size));
@@ -398,14 +401,14 @@ void ota_task_handler(void *param)
 }
 
 
-// 将版本字符串解析为整数，例如 "1.2.3" -> 0x010203
+// 将版�?字�?�串解析为整数，例�?? "1.2.3" -> 0x010203
 unsigned int ota_parse_version(const char *version_str) {
     unsigned int major = 0, minor = 0, patch = 0;
     sscanf(version_str, "%u.%u.%u", &major, &minor, &patch);
     return (major << 16) | (minor << 8) | patch;
 }
 
-// 比较两个版本字符串
+// 比较两个版本字�?�串
 int ota_compare_versions(const char *v1, const char *v2) {
     unsigned int ver1 = ota_parse_version(v1);
     unsigned int ver2 = ota_parse_version(v2);
@@ -427,6 +430,12 @@ void ota_read_running_app_version(void)
 	uint16_t version_aa = (version >> 16) & 0xff;
 	uint16_t version_bb = (version >> 8) & 0xff;
 	uint16_t version_cc = (version >> 0) & 0xff;
+	uint16_t version_year = 2025;		//日期为台
+	uint16_t version_month = 8;				//日期�?
+	uint16_t version_day = 26;				//
+	modbus_reg_write(REG_OTA_VERSION_YEAR,&version_year,1);
+	modbus_reg_write(REG_OTA_VERSION_MONTH,&version_month,1);
+	modbus_reg_write(REG_OTA_VERSION_DAY,&version_day,1);
 	modbus_reg_write(REG_OTA_VERSION_AA,&version_aa,1);
 	modbus_reg_write(REG_OTA_VERSION_BB,&version_bb,1);
 	modbus_reg_write(REG_OTA_VERSION_CC,&version_cc,1);
@@ -448,9 +457,9 @@ void ota_init(void)
 	/*加载ota信息*/
 	ota_info_load();
 	ota_info.process = OTA_PROCESS_IDLE;
-	/*保存版本信息到modbus寄存器*/
+	/*保存版本信息到modbus寄存�?*/
 	ota_read_running_app_version();
-	/*状态信息保存到modbus寄存器*/
+	/*状态信�?保存到modbus寄存�?*/
 	ota_info.status = OTA_STATUS_FINISH;
 	modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
 	/*创建超时检测定时器*/
@@ -475,7 +484,7 @@ void ota_data_deal_handler(uint8_t *pdata,uint16_t num)
     uint8_t  frm_type = pdata[2];
     if(frm_type != 0x01 )        return;
 
-    if(frm_flag == 0x00){       //升级开始标志
+    if(frm_flag == 0x00){       //升级开始标�?
         xEventGroupSetBits(ota_event_group,OTA_EVENT_START);
 		ota_info.upgrade_size = (pdata[8]<<0) | (pdata[9]<<8) | (pdata[10]<<16) |(pdata[11]<<24) ;
         return;

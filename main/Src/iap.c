@@ -12,15 +12,15 @@ const char *app_name = "µç³ØÐÅÏ¢²É¼¯Èí¼þ";
 #define FACTORY_APP		0
 #define IAP_APP			1
 #define APP_TYPE		FACTORY_APP
-#define APP_MAX_SIZE	0xA000				//40kb
-#define REG_IAP_START_FLAG 0x0003
-#define REG_IAP_VERSION_YEAR 0x3000
-#define REG_IAP_VERSION_AA 0x3003
-#define REG_IAP_VERSION_BB 0x3004
-#define REG_IAP_VERSION_CC 0x3005
-#define IAP_OUT_TIME_MS	   10000
+#define APP_MAX_SIZE			0xA000				//40kb
+#define REG_IAP_START_FLAG 		0x200F
+#define REG_IAP_VERSION_YEAR 	0x3000
+#define REG_IAP_VERSION_AA 		0x3003
+#define REG_IAP_VERSION_BB 		0x3004
+#define REG_IAP_VERSION_CC 		0x3005
+#define IAP_OUT_TIME_MS	   		10000
 
-#define IAP_INFO_CRC		0xAA55
+#define IAP_INFO_CRC			0xAA55
 
 
 typedef void (*pAppFunction)(void);
@@ -102,7 +102,7 @@ typedef struct _iap_info
 iap_info_t iap_info;
 
 #define  IAP_TIMEOUT		10
-uint16_t   iap_delay_time = IAP_TIMEOUT;					//IAP¹ý³Ì³¬Ê±Ê±¼ä
+uint16_t   iap_delay_time = IAP_TIMEOUT;					//IAPï¿½ï¿½ï¿½Ì³ï¿½Ê±Ê±ï¿½ï¿½
 uint8_t    app_is_executable = 0;
 
 #define IAP_INFO_OFFSET		0x300
@@ -413,7 +413,7 @@ bool iap_bin_crc(void)
         ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
         return false;
     }
-    fseek(file, 0L, SEEK_END);  // ½«Î»ÖÃÒÆµ½ÎÄ¼þ½áÎ²
+    fseek(file, 0L, SEEK_END);  // ï¿½ï¿½Î»ï¿½ï¿½ï¿½Æµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Î²
     size_t size = ftell(file);
     rewind(file);
 
@@ -447,7 +447,7 @@ bool iap_app_update(void)
 		return status;
 	}
 
-	fseek(file_cache, 0L, SEEK_END);  // ½«Î»ÖÃÒÆµ½ÎÄ¼þ½áÎ²
+	fseek(file_cache, 0L, SEEK_END);  // ï¿½ï¿½Î»ï¿½ï¿½ï¿½Æµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Î²
     size_t size = ftell(file_cache);
     rewind(file_cache);
 	

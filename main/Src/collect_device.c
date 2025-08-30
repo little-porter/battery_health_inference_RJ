@@ -4,64 +4,98 @@
 
 static const char *TAG = "PRJ_COLLECT";
 
-static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";
-static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";
+/************************************************************************************
+*电池信息采集软件bin文件名称定义
+************************************************************************************/
+static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";                 //电池信息采集软件bin文件路径
+static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";     //bin文件缓存路径
 
-#define COLLECT_UART_PORT     UART_NUM_1
-#define COLLECT_UART_BAUD     115200
-#define COLLECT_UART_TX_PIN   GPIO_NUM_43
-#define COLLECT_UART_RX_PIN   GPIO_NUM_44
+#define COLLECT_INFO_OFFSET				0x300                                               //软件信息在bin文件中的偏移
+/************************************************************************************
+*底板串口信息定义
+************************************************************************************/
+#define COLLECT_UART_PORT     UART_NUM_1                //使用串口1
+#define COLLECT_UART_BAUD     4800                      //串口波特率(不能大于9600，隔离电路决定)
+#define COLLECT_UART_TX_PIN   GPIO_NUM_43               //GPIO43
+#define COLLECT_UART_RX_PIN   GPIO_NUM_44               //GPIO44
 // #define COLLECT_EN_PIN        GPIO_NUM_45
+QueueHandle_t collect_device_queue = NULL;              //串口事件队列
 
-#define COLLECT_DEVICE_ADDR         0x01
-#define COLLECT_DEVICE_BROADCAST_ADDR    0xFF
-#define COLLECT_DEVICE_ADDR_IDX     0
-#define COLLECT_DEVICE_FUNC_IDX     1
-#define REG_NUM_IDX                 2
-#define REG_DATA_IDX                4
+#define  COLLECT_DEVICE_DATA_SIZE      100              //底板数据帧最大长度
+#define  COLLECT_DEVICE_FIFO_SIZE      100              //底板数据帧FIFO深度
 
+typedef struct _collect_data
+{
+    uint8_t data[COLLECT_DEVICE_DATA_SIZE];
+    uint16_t len;
+}collect_data_t;                                        //数据帧结构体
+                                      
+typedef struct _collect_fifo
+{
+    collect_data_t data[COLLECT_DEVICE_FIFO_SIZE];
+    uint16_t pos;
+    uint16_t tail;
+}collect_fifo_t;                                       //数据帧FIFO结构体   
+collect_fifo_t collect_rx_fifo;                        //底板数据接收FIFO
 
-#define REG_COLLECT_VERSION_YEAR    0x3006
-#define REG_COLLECT_VERSION_MONTH   0x3007
-#define REG_COLLECT_VERSION_DAY     0x3008
-#define REG_COLLECT_VERSION_AA      0x3009
-#define REG_COLLECT_VERSION_BB      0x300A
-#define REG_COLLECT_VERSION_CC      0x300B
+/************************************************************************************
+*底板数据帧定义
+************************************************************************************/
+#define COLLECT_DEVICE_ADDR                 0x01        //底板设备地址
+#define COLLECT_DEVICE_BROADCAST_ADDR       0xFF        //广播地址
+#define COLLECT_DEVICE_FUNC_READ            0x03        //读寄存器功能码
+#define COLLECT_DEVICE_FUNC_WRITE           0x10        //写寄存器功能码
+#define COLLECT_DEVICE_ADDR_IDX             0           //设备地址索引        
+#define COLLECT_DEVICE_FUNC_IDX             1           //功能码索引   
+#define REG_NUM_IDX                         2           //寄存器数量索引
+#define REG_DATA_IDX                        4           //寄存器数据索引 
 
+#define COLLECT_DEVICE_RESPOND_TIME         150         //底板响应时间
+/************************************************************************************
+*modbus寄存器地址宏定义
+************************************************************************************/
+#define REG_COLLECT_VERSION_YEAR    0x3006              //软件版本年寄存器
+#define REG_COLLECT_VERSION_MONTH   0x3007              //软件版本月寄存器
+#define REG_COLLECT_VERSION_DAY     0x3008              //软件版本日寄存器
+#define REG_COLLECT_VERSION_AA      0x3009              //软件版本AA寄存器
+#define REG_COLLECT_VERSION_BB      0x300A              //软件版本BB寄存器
+#define REG_COLLECT_VERSION_CC      0x300B              //软件版本CC寄存器
 
-#define COLLECT_INFO_OFFSET				0x300
-
-QueueHandle_t collect_device_queue = NULL;
-
+/************************************************************************************
+*采集底板信息
+************************************************************************************/
 typedef enum _collect_process_t
 {
-    COLLECT_PROCESS_INIT = 0,                   //初�?�化，获取版�?号，判断�?否需要更�?
-    COLLECT_PROCESS_GET_VERSION,                //获取版本�?
-    COLLECT_PROCESS_READ_DATA,                  //读取数据
-    COLLECT_PROCESS_UPGRADE,                    //�?件升�?
+    COLLECT_PROCESS_INIT = 0,                           //初始化过程
+    COLLECT_PROCESS_GET_VERSION,                        //获取版本信息
+    COLLECT_PROCESS_READ_DATA,                          //读取数据
+    COLLECT_PROCESS_UPGRADE,                            //软件升级
     COLLECT_PROCESS_SET_CALIBRATION,
     COLLECT_PROCESS_READ_CALIBRATION ,
-}collect_process_t;
-
-collect_process_t collect_process = COLLECT_PROCESS_INIT;
-
-#define  CALIBRATE_TABLE_LEN        8
-uint16_t collect_calibrate_table[CALIBRATE_TABLE_LEN];
+    COLLECT_PROCESS_SET_BALANCE,
+    COLLECT_PROCESS_GET_BALANCE,
+    COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION,
+    COLLECT_PROCESS_GET_VOLTAGE_CALIBRATION,
+    COLLECT_PROCESS_SET_CO_CALIBRATION,
+    COLLECT_PROCESS_GET_CO_CALIBRATION,
+    COLLECT_PROCESS_SET_H2_CALIBRATION,
+    COLLECT_PROCESS_GET_H2_CALIBRATION,
+}collect_process_t;                                     //采集底板信息交互过程    
 
 typedef struct _version
 {
     uint16_t year,month,day;
     uint16_t aa,bb,cc;
-}version_t;
+}version_t;                                             //软件版本结构体  
 
-version_t collect_version;
+version_t collect_version;                              //采集底板软件版本
 
 typedef enum _collect_upgrade_flag
 {
     COLLECT_UPGRADE_FLAG_START = 0,
     COLLECT_UPGRADING,
     COLLECT_UPGRADE_FLAG_END,
-}collect_upgrade_flag_t;
+}collect_upgrade_flag_t;                                //采集底板软件升级过程标志
 
 
 typedef struct _iap_msg
@@ -73,13 +107,201 @@ typedef struct _iap_msg
     uint16_t frm_num;
     uint16_t data_len;
     uint8_t payload[0];
-}iap_msg_t;
+}iap_msg_t;                                             //采集底板iap消息结构体       
 
-#define  collect_data_reverse(pdata,num)      modbus_reg_data_reverse(pdata,num)
+#define  collect_data_reverse(pdata,num)      modbus_reg_data_reverse(pdata,num)    //数据反转宏定义
 
+typedef struct _collect_device
+{
+    uint16_t modebus_addr;
+    uint16_t devcie_type;
+    uint16_t device_addr;
+    uint16_t capacity;
+    uint16_t balance;
+    uint16_t upgrade_flag;
+}collect_device_t;                                              //采集底板设备结构体  
 
-void collect_send_task_handler(void *pvParameters);
-void collect_recive_task_handler(void *pvParameters);
+collect_process_t collect_process = COLLECT_PROCESS_INIT;       //采集底板交互状态
+
+#define  CALIBRATE_TABLE_LEN        20                          //校准表长度
+uint16_t collect_calibrate_table[CALIBRATE_TABLE_LEN];          //校准表
+collect_device_t collect_device;                                //采集底板设备
+/************************************************************************************
+*采集底板接收fifo相关函数定义
+************************************************************************************/
+uint16_t collect_device_rx_fifo_data_num(void)
+{
+    uint16_t data_num = 0;
+    if(collect_rx_fifo.tail == collect_rx_fifo.pos){
+        return data_num;
+    }else if(collect_rx_fifo.tail > collect_rx_fifo.pos){
+        data_num = collect_rx_fifo.tail - collect_rx_fifo.pos;
+    }else{
+        data_num = collect_rx_fifo.tail + COLLECT_DEVICE_FIFO_SIZE - collect_rx_fifo.pos;
+    }
+    return data_num;
+}
+
+void collect_device_clear_rx_fifo(void)
+{
+    collect_rx_fifo.tail = 0;
+    collect_rx_fifo.pos = 0;
+}
+
+void collect_device_push_data_to_rx_fifo(uint8_t *data,uint16_t len)
+{
+    uint16_t write_size = 0;
+    if(len > COLLECT_DEVICE_DATA_SIZE){
+        write_size = COLLECT_DEVICE_DATA_SIZE;
+    }else{
+        write_size = len;
+    }
+
+    memcpy(collect_rx_fifo.data[collect_rx_fifo.tail].data,data,write_size);
+    collect_rx_fifo.data[collect_rx_fifo.tail].len = write_size;
+    collect_rx_fifo.tail++;
+    collect_rx_fifo.tail %= COLLECT_DEVICE_FIFO_SIZE;
+}
+
+uint16_t collect_device_pull_data_from_rx_fifo(uint8_t *data,uint16_t max_len)
+{
+    uint16_t read_size = 0;
+    if(collect_rx_fifo.pos == collect_rx_fifo.tail)  return 0;
+    if(max_len < collect_rx_fifo.data[collect_rx_fifo.pos].len){
+        read_size = max_len;
+    }else{
+        read_size = collect_rx_fifo.data[collect_rx_fifo.pos].len;
+    }
+    memcpy(data,collect_rx_fifo.data[collect_rx_fifo.pos].data,read_size);
+    collect_rx_fifo.pos++;
+    collect_rx_fifo.pos %= COLLECT_DEVICE_FIFO_SIZE;
+    return read_size;
+}
+/************************************************************************************
+*采集底板软件升级相关函数定义
+************************************************************************************/
+void collect_device_read_upgrade_flag(void)
+{
+    printf("[collect_device] collect device upgrade flag read\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = 0x04;
+    uint16_t read_reg_addr = 0x2000,read_reg_num = 1;
+    uint8_t data[8] = {0x00};
+    uint16_t len = 8;
+    data[0] = addr;
+    data[1] = cmd;
+    data[2] = read_reg_addr>>8;
+    data[3] = read_reg_addr&0xff;
+    data[4] = read_reg_num>>8;
+    data[5] = read_reg_num&0xff;
+    uint16_t crc = modbus_calculate_crc(data,len-2);
+    data[len-2] = crc&0xff;
+    data[len-1] = crc>>8;
+    uart_write_bytes(COLLECT_UART_PORT,data,len);
+    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+    uint8_t read_data[100] = {0};
+    uint16_t cal_crc = 0;
+    uint16_t read_len = collect_device_pull_data_from_rx_fifo(read_data, sizeof(read_data));
+    if(read_len>0){
+        if(read_len > 6){
+            cal_crc = modbus_calculate_crc(read_data,read_len-2);
+            crc = read_data[read_len-2] | (read_data[read_len-1]<<8);
+        }
+        
+        if((cal_crc == crc) && (read_data[0] == addr) && (read_data[1] == cmd) && (read_reg_num*2 == (read_data[2]<<8 | read_data[3]))){
+            modbus_reg_write_no_reverse(0x200f,&read_data[4],1);            //升级标志
+            collect_device.upgrade_flag = read_data[4]<<8|read_data[5];     //升级标志   
+            if(collect_device.upgrade_flag == 0x01){
+                ESP_LOGE(TAG, "collect device upgrade success");
+            }else{
+                ESP_LOGE(TAG, "collect device upgrade fail,error code = %d",collect_device.upgrade_flag);
+            }
+        }else{
+            printf("respond msg error,error code = %d\r\n",read_data[1]);
+        }
+        
+        printf("respond crc = %04x , cal_crc = %04x\r\n",crc,cal_crc);
+        // printf("collect device upgrade flag read success.\r\n",crc,cal_crc);
+    }else{
+        ESP_LOGE(TAG, "collect device upgrade flag read fail.");
+    }
+}
+
+void collect_device_upgrade_data_send(const char *data,uint32_t len,uint16_t frm_num,collect_upgrade_flag_t flag)
+{
+    uint32_t size = sizeof(iap_msg_t)+len+2;
+    iap_msg_t *iap_msg = (iap_msg_t *)heap_caps_malloc(size,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    uint16_t crc = 0;
+    iap_msg->dev_addr = COLLECT_DEVICE_ADDR;
+    iap_msg->cmd = 0xff;
+    iap_msg->dev_type = 0x02;
+    if(flag == COLLECT_UPGRADE_FLAG_START){
+        iap_msg->frm_flag = 0x00;
+    }else if(flag == COLLECT_UPGRADE_FLAG_END){
+        iap_msg->frm_flag = 0x11;
+    }else{
+        iap_msg->frm_flag = 0x10;
+    }
+    iap_msg->frm_num = frm_num>>8 | ((frm_num&0xff)<<8);
+    iap_msg->data_len = len;
+    memcpy(iap_msg->payload,data,len);
+    crc = modbus_calculate_crc((uint8_t *)iap_msg,size-2);
+    iap_msg->payload[len] = crc&0xff;
+    iap_msg->payload[len+1] = crc>>8;
+
+    uart_write_bytes(COLLECT_UART_PORT,iap_msg,size);
+    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+
+    heap_caps_free(iap_msg);
+}
+
+void collect_device_upgrade(void)
+{
+    FILE* file = fopen(collect_bin_file, "rb");
+    if(file == NULL){
+        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        goto OPEN_FAIL;
+    }
+    fseek(file, 0L, SEEK_END);          // 将文件指针移动到文件末尾
+    size_t bin_size = ftell(file);      // 获取文件大小
+    rewind(file);                       // 将文件指针移动到文件开头
+    if(bin_size == 0){
+        goto OPEN_FAIL;
+    }else{;}
+
+    uint8_t *data = heap_caps_malloc(1024,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    size_t bytes_read = 0;
+    size_t send_size = 0;
+    uint16_t cal_crc = 0xFFFF;
+    uint16_t frm_num = 0;
+
+    //发送升级起始帧(包含bin文件大小)
+    collect_device_upgrade_data_send((const char*)&bin_size,sizeof(size_t),frm_num++,COLLECT_UPGRADE_FLAG_START);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    ESP_LOGI(TAG, "total File size: %d bytes", bin_size);
+    
+    //发送升级数据
+    while((bytes_read = fread(data, 1, 1024, file)) > 0){
+        collect_device_upgrade_data_send((const char*)data,bytes_read,frm_num++,COLLECT_UPGRADING);
+        cal_crc = modbus_calculate_crc_ota(cal_crc,data,bytes_read);
+        send_size+=bytes_read;
+        vTaskDelay(pdMS_TO_TICKS(300));
+        ESP_LOGI(TAG, "sent File size: %d bytes...", send_size);
+    }
+
+    //发送升级结束帧(包含bin文件crc)
+    collect_device_upgrade_data_send((const char*)&cal_crc,sizeof(uint16_t),frm_num++,COLLECT_UPGRADE_FLAG_END);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    ESP_LOGI(TAG, "File crc: %04x", cal_crc);
+
+    // collect_device_read_upgrade_flag();             //读取升级标志
+    heap_caps_free(data);
+    fclose(file);
+
+OPEN_FAIL:
+}
+
 
 void collect_device_bin_soft_version_get(void)
 {
@@ -117,322 +339,475 @@ void collect_device_uart_config(void)
 }
 
 
-void collect_device_init(void)
+typedef struct _collect_device_msg_t{
+    uint8_t dev_addr;
+    uint8_t cmd;
+    uint16_t reg_addr;
+    uint16_t reg_num;
+    uint8_t payload[0];
+} collect_device_msg_t;
+
+void collect_device_reg_read(uint16_t reg_addr,uint16_t reg_num)
 {
-    collect_device_uart_config();
-    collect_process = COLLECT_PROCESS_INIT;
-    collect_device_bin_soft_version_get();
-    xTaskCreatePinnedToCore(collect_send_task_handler,"rs485_send_task",1024*5,NULL,5,NULL,0);
-    xTaskCreatePinnedToCore(collect_recive_task_handler,"rs485_recive_task",1024*5,NULL,5,NULL,0);
+    uint16_t msg_size = sizeof(collect_device_msg_t)+2;
+    collect_device_msg_t *msg = (collect_device_msg_t *)heap_caps_malloc(msg_size,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    
+    msg->dev_addr = COLLECT_DEVICE_ADDR;
+    msg->cmd = COLLECT_DEVICE_FUNC_READ;
+    msg->reg_addr = (reg_addr>>8)|((reg_addr&0xff)<<8);
+    msg->reg_num = (reg_num>>8)|((reg_num&0xff)<<8);
+    uint16_t crc = modbus_calculate_crc((uint8_t *)msg,msg_size-2);
+    msg->payload[0] = crc&0xff;
+    msg->payload[1] = crc>>8;
+    uart_write_bytes(COLLECT_UART_PORT,msg,msg_size);
+    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+
+    heap_caps_free(msg);
 }
 
-typedef union _u_float_u8
-{
-    /* data */
-    float f_data;
-    uint8_t u8_data[4];
-}u_float_u8_t;
 
-
-void collect_device_init_read(void)
+void collect_device_reg_write(uint16_t reg_addr,uint16_t reg_num,uint16_t *data)
 { 
-    printf("[collect_device] collect_device_init_read\r\n");
-    uint8_t data[8] = {0x01, 0x04, 0x40, 0x01, 0x00, 0x08, 0x00, 0x01};
-    uint16_t len = 8;
-    uint16_t crc = modbus_calculate_crc(data,len-2);
-    data[len-2] = crc&0xff;
-    data[len-1] = crc>>8;
-
-    uart_write_bytes(COLLECT_UART_PORT,data,len);
+    uint16_t msg_size = sizeof(collect_device_msg_t)+2+reg_num*2;
+    collect_device_msg_t *msg = (collect_device_msg_t *)heap_caps_malloc(msg_size,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    
+    msg->dev_addr = COLLECT_DEVICE_ADDR;
+    msg->cmd = COLLECT_DEVICE_FUNC_WRITE;
+    msg->reg_addr = (reg_addr>>8)|((reg_addr&0xff)<<8);
+    msg->reg_num = (reg_num>>8)|((reg_num&0xff)<<8);
+    memcpy(msg->payload,data,reg_num*2);
+    uint16_t crc = modbus_calculate_crc((uint8_t *)msg,msg_size-2);
+    msg->payload[reg_num*2] = crc&0xff;
+    msg->payload[reg_num*2+1] = crc>>8;
+    uart_write_bytes(COLLECT_UART_PORT,msg,msg_size);
     uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+
+    heap_caps_free(msg);
 }
-void collect_device_read_data(void)
+
+void collect_device_read_reg_respond_anlysis(uint16_t reg_addr,uint16_t reg_num,uint16_t *data)
 {
-    printf("[collect_device] collect_device_read_data\r\n");
-    uint8_t data[8] = {0x01, 0x03, 0x10, 0x00, 0x00, 0x0B, 0x00, 0xCD};
-    uint16_t len = 8;
+    if(reg_addr>=0x4000 && reg_addr<0x5000){
+        ESP_LOGI(TAG, "collect device read calibration success");
+        modbus_reg_write_no_reverse(reg_addr,data,reg_num);
+        memcpy(&collect_calibrate_table[reg_addr-0x4001],data,reg_num*2);
+    }else if(reg_addr>=0x1000 && reg_addr<0x2000){
+        ESP_LOGI(TAG, "collect device read data success");
+        modbus_reg_write_no_reverse(reg_addr,data,reg_num);
+        // memcpy(collect_calibrate_table,data,reg_num*2);
+    }else if(reg_addr>=0x2000 && reg_addr<0x3000){
+        ESP_LOGI(TAG, "collect device read upgrade flag success");
+        modbus_reg_write_no_reverse(reg_addr,data,reg_num);
+        collect_device.upgrade_flag = (*data&0xFF)<<8|(*data)>>8;     //升级标志   
+    }else if(reg_addr>=0x3000 && reg_addr<0x4000){
+        ESP_LOGI(TAG, "collect device read version success");
+        modbus_reg_write_no_reverse(REG_COLLECT_VERSION_YEAR,data,reg_num);
+        version_t version;
+        uint16_t *data_ptr = data;
+        version.year = data_ptr[0];
+        version.month = data_ptr[1];
+        version.day = data_ptr[2];
+        version.aa = data_ptr[3];
+        version.bb = data_ptr[4];
+        version.cc = data_ptr[5];
+        collect_data_reverse((uint16_t *)&version,sizeof(version_t)/2);
 
-    uart_write_bytes(COLLECT_UART_PORT,data,len);
-    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+        ESP_LOGI(TAG, "collect_device_run_soft_version is:%d-%d-%d  %d.%d.%d",
+                    (int)version.year,(int)version.month,(int)version.day,
+                    (int)version.aa,(int)version.bb,(int)version.cc);
+    }else{
+        ESP_LOGI(TAG, "collect device read reg addr not anlysis,error addr = %04x",reg_addr);
+    }
 }
 
-void collect_device_set_calibration(void)
-{ 
-    printf("[collect_device] collect_device_set_calibration\r\n");
-    uint8_t data[26] = {0x01, 0x10, 0x40, 0x00, 0x00, 0x09, 0x00, 0x01,\
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\
-                        0x00, 0x0D};
-    uint16_t len = 26;
-    uint16_t data_reg[8] = {0};
-    modbus_reg_read_no_reverse(0x4001,data_reg,8);
-    memcpy(data+8,data_reg,8*2);
-    uint16_t crc = modbus_calculate_crc(data,len-2);
-    data[len-2] = crc&0xff;
-    data[len-1] = crc>>8;
+void collect_device_write_reg_respond_anlysis(uint16_t reg_addr,uint16_t reg_num)
+{
+    if(reg_addr < 0x1000 || (reg_addr >= 0x4000 && reg_addr < 0x5000)){
+        ESP_LOGI(TAG, "collect device write reg addr success,reg_addr = %04x,reg_num = %d",reg_addr,reg_num);
+    }else{
+        ESP_LOGE(TAG, "collect device write reg invalid,reg_addr = %04x,reg_num = %d",reg_addr,reg_num);
+    }
+}
 
-    uart_write_bytes(COLLECT_UART_PORT,data,len);
-    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
+void collect_device_respond_msg_anlysis(uint8_t cmd,uint16_t reg_addr,uint16_t reg_num)
+{
+    uint8_t read_data[100] = {0};
+    uint16_t cal_crc = 0xFFFF,crc = 0;
+    uint16_t read_len = collect_device_pull_data_from_rx_fifo(read_data, sizeof(read_data));
+    if(read_len>0){
+        ESP_LOGI(TAG, "collect device respond,ops reg_addr = %04x,reg_num = %d",reg_addr,reg_num);
+        if(read_len > 2){
+            cal_crc = modbus_calculate_crc(read_data,read_len-2);
+            crc = read_data[read_len-2] | (read_data[read_len-1]<<8);
+        }
+        if(cal_crc != crc){ 
+            ESP_LOGE(TAG, "collect device respond msg  crc error,crc = %d,cal_crc = %d",crc,cal_crc);
+            return;
+        }else if(read_data[0] != COLLECT_DEVICE_ADDR){
+            ESP_LOGE(TAG, "collect device respond addr error,error adrr = %d",read_data[0]);
+            return;
+        }else if(read_data[1] != cmd){
+            if(read_data[1] == cmd+0x80){
+                ESP_LOGE(TAG, "collect device error respond,error cmd = %d,error code = %d",read_data[1],read_data[2]); 
+            }else{
+                ESP_LOGE(TAG, "collect device respond cmd error,error cmd = %d",read_data[1]);
+            }
+            return;
+        }else{;}
+        
+        if(cmd == COLLECT_DEVICE_FUNC_READ){
+            if(reg_num*2 != (read_data[2]<<8 | read_data[3])){
+                ESP_LOGE(TAG, "collect device respond read reg num error,read num = %d,data_num = %d",reg_num*2,(read_data[2]<<8 | read_data[3]));
+            }else{
+                collect_device_read_reg_respond_anlysis(reg_addr,reg_num,&read_data[4]);
+            }
+            
+        }else if(cmd == COLLECT_DEVICE_FUNC_WRITE){
+            if(reg_num != (read_data[4]<<8 | read_data[5])){
+                ESP_LOGE(TAG, "collect device respond write reg num error,reg_num = %d,write num = %d",reg_num,(read_data[4]<<8 | read_data[5]));
+            }else{
+                collect_device_write_reg_respond_anlysis(reg_addr,reg_num);
+            }
+        }else{
+            ESP_LOGE(TAG, "collect device ops cmd error,error ops cmd = %d",cmd);
+        }
+    }else{
+        ESP_LOGE(TAG, "collect device not respond,ops reg_addr = %04x,reg_num = %d",reg_addr,reg_num);
+    }
 }
 
 void collect_device_read_calibration(void)
+{
+    printf("[collect_device] Read Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x4001,read_reg_num = 12;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_device_read_data(void)
+{
+    printf("[collect_device] Read Data\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x1003,read_reg_num = 8;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_devicie_read_version(void)
+{
+    printf("[collect_device] Read Version\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x3000,read_reg_num = 6;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+void collect_device_read_config_param(void)
 { 
-    printf("[collect_device] collect_device_read_calibration\r\n");
-    uint8_t data[8] = {0x01, 0x04, 0x40, 0x01, 0x00, 0x08, 0x00, 0x01};
-    uint16_t len = 8;
-    uint16_t crc = modbus_calculate_crc(data,len-2);
-    data[len-2] = crc&0xff;
-    data[len-1] = crc>>8;
+    printf("[collect_device] Read Config Param\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x0000,read_reg_num = 5;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
 
-    uart_write_bytes(COLLECT_UART_PORT,data,len);
-    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
-}
-
-void collect_devicie_version_get(void)
-{
-    printf("[collect_device] collect_devicie_version_get\r\n");
-    uint8_t data[8] = {0x01, 0x03, 0x30, 0x00, 0x00, 0x06, 0x00, 0x01};
-    uint16_t len = 8;
-    uint16_t crc = modbus_calculate_crc(data,len-2);
-    data[len-2] = crc&0xff;
-    data[len-1] = crc>>8;
-
-    uart_write_bytes(COLLECT_UART_PORT,data,len);
-    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
-}
-
-void collect_device_upgrade_data_send(const char *data,uint32_t len,uint16_t frm_num,collect_upgrade_flag_t flag)
-{
-    uint32_t size = sizeof(iap_msg_t)+len+2;
-    iap_msg_t *iap_msg = (iap_msg_t *)heap_caps_malloc(size,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
-    uint16_t crc = 0;
-    iap_msg->dev_addr = COLLECT_DEVICE_ADDR;
-    iap_msg->cmd = 0xff;
-    iap_msg->dev_type = 0x02;
-    if(flag == COLLECT_UPGRADE_FLAG_START){
-        iap_msg->frm_flag = 0x00;
-    }else if(flag == COLLECT_UPGRADE_FLAG_END){
-        iap_msg->frm_flag = 0x11;
-    }else{
-        iap_msg->frm_flag = 0x10;
-    }
-    iap_msg->frm_num = frm_num>>8 | ((frm_num&0xff)<<8);
-    iap_msg->data_len = len;
-    memcpy(iap_msg->payload,data,len);
-    crc = modbus_calculate_crc((uint8_t *)iap_msg,size-2);
-    iap_msg->payload[len] = crc&0xff;
-    iap_msg->payload[len+1] = crc>>8;
-
-    uart_write_bytes(COLLECT_UART_PORT,iap_msg,size);
-    uart_wait_tx_done(COLLECT_UART_PORT,portMAX_DELAY);
-
-    heap_caps_free(iap_msg);
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
 
 
-void collect_device_upgrade(void)
+void collect_device_balance_check(void)
 {
-    FILE* file = fopen(collect_bin_file, "rb");
-    if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
-        goto OPEN_FAIL;
-    }
-    fseek(file, 0L, SEEK_END);  // 将文件指针移动到文件�?�?
-    size_t bin_size = ftell(file);
-    rewind(file);
-    uint16_t frm_num = 0;
-    uint16_t cal_crc = 0xFFFF;
-    size_t send_size = 0;
-    if(bin_size == 0){
-        goto OPEN_FAIL;
+    uint16_t balance = 0;
+    modbus_reg_read(0x0006,&balance,1);
+    if(collect_device.balance != balance){
+        sysEvent_set(collect_dev_event_group,COLLECT_DEV_BALANCE_EVENT_BIT);
+        collect_device.balance = balance;
     }
 
-    ESP_LOGI(TAG, "need to send File size: %d bytes", bin_size);
+}
 
-    collect_device_upgrade_data_send((const char*)&bin_size,sizeof(size_t),frm_num++,COLLECT_UPGRADE_FLAG_START);
-    vTaskDelay(pdMS_TO_TICKS(300));
+void collect_device_voltage_calibration_check(void)
+{
+    uint16_t calibration[4] = {0};
+    modbus_reg_read_no_reverse(0x4001,&calibration,4);
+    if(0 != memcmp(calibration,&collect_calibrate_table[0],sizeof(calibration))){
+        sysEvent_set(collect_dev_event_group,COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT);
+        // modbus_reg_write_no_reverse(0x4001,&collect_calibrate_table[0],4);
+        memcpy(&collect_calibrate_table[0],calibration,sizeof(uint16_t)*4);
+    }
 
-    uint8_t *data = heap_caps_malloc(1024,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
-    size_t bytes_read = 0;
+}
+void collect_device_co_calibration_check(void)
+{
+    uint16_t calibration[4] = {0};
+    uint16_t size = sizeof(calibration);
+    modbus_reg_read_no_reverse(0x4005,&calibration,4);
+    if(0 != memcmp(calibration,&collect_calibrate_table[4],sizeof(calibration))){
+        sysEvent_set(collect_dev_event_group,COLLECT_DEV_CO_CALIB_EVENT_BIT);
+        // modbus_reg_write_no_reverse(0x4005,&collect_calibrate_table[4],4);
+        memcpy(&collect_calibrate_table[4],calibration,sizeof(calibration));
+    }
 
+}
+void collect_device_h2_calibration_check(void)
+{
+    uint16_t calibration[4] = {0};
+    modbus_reg_read_no_reverse(0x4009,&calibration,4);
+    if(0 != memcmp(calibration,&collect_calibrate_table[8],sizeof(calibration))){
+        sysEvent_set(collect_dev_event_group,COLLECT_DEV_H2_CALIB_EVENT_BIT);
+        // modbus_reg_write_no_reverse(0x4009,&collect_calibrate_table[8],4);
+        memcpy(&collect_calibrate_table[8],calibration,sizeof(uint16_t)*4);
+    }
+
+}
+
+void collect_device_current_data_updata(void)
+{
+    uint16_t current = 0;
+    modbus_reg_read_no_reverse(0x001E,&current,1);
+    modbus_reg_write_no_reverse(0x1000,&current,1);
+    collect_device_balance_check();
+    collect_device_voltage_calibration_check();
+    collect_device_co_calibration_check();
+    collect_device_h2_calibration_check();
+}
+
+
+void collect_device_balance_set(void)
+{
+    printf("[collect_device] Set Balance Mode\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_device.balance);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+void collect_device_balance_get(void)
+{
+    printf("[collect_device] Get Balance Mode\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+
+void collect_device_calibration_open(void)
+{
+    printf("[collect_device] Calibration Open\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x4000,read_reg_num = 1;
+    uint16_t open_flag = 0x0100;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&open_flag);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_device_calibration_close(void)
+{
+    printf("[collect_device] Calibration Close\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x4000,read_reg_num = 1;
+    uint16_t open_flag = 0x0000;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&open_flag);
     
-    while((bytes_read = fread(data, 1, 1024, file)) > 0){
-        //发送升级数�?
-        collect_device_upgrade_data_send((const char*)data,bytes_read,frm_num++,COLLECT_UPGRADING);
-        cal_crc = modbus_calculate_crc_ota(cal_crc,data,bytes_read);
-        send_size+=bytes_read;
-        ESP_LOGI(TAG, "send File size: %d bytes", send_size);
-        vTaskDelay(pdMS_TO_TICKS(300));
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+
+void collect_device_voltage_calibration_set(void)
+{ 
+    collect_device_calibration_open();
+    printf("[collect_device] Set Voltage Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x4001,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[0]);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+
+    collect_device_calibration_close();
+}
+
+void collect_device_voltage_calibration_get(void)
+{
+    printf("[collect_device] Get Voltage Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x4001,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_device_co_calibration_set(void)
+{ 
+    collect_device_calibration_open();
+    printf("[collect_device] Set CO Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x4005,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[4]);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+
+    collect_device_calibration_close();
+}
+void collect_device_co_calibration_get(void)
+{
+    printf("[collect_device] Get CO Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x4005,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+void collect_device_h2_calibration_set(void)
+{ 
+    collect_device_calibration_open();
+    printf("[collect_device] Set H2 Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x4009,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[8]);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+
+    collect_device_calibration_close();
+}
+void collect_device_h2_calibration_get(void)
+{
+    printf("[collect_device] Get H2 Calibration\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x4009,read_reg_num = 4;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_device_event_handler(void)
+{
+    uint32_t collect_event = 0;
+    sysEvent_get(collect_dev_event_group,&collect_event);
+    if(collect_event&COLLECT_DEV_CALIB_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_CALIB_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_SET_CALIBRATION;
+    }else if(collect_event&COLLECT_DEV_UPGRADE_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_UPGRADE_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_UPGRADE;
+    }else if(collect_event&COLLECT_DEV_BALANCE_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_BALANCE_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_SET_BALANCE;
+    }else if(collect_event&COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION;
+    }else if(collect_event&COLLECT_DEV_CO_CALIB_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_CO_CALIB_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_SET_CO_CALIBRATION;
+    }else if(collect_event&COLLECT_DEV_H2_CALIB_EVENT_BIT){
+        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_H2_CALIB_EVENT_BIT);
+        collect_process = COLLECT_PROCESS_SET_H2_CALIBRATION;
     }
-
-    ESP_LOGI(TAG, "send File crc: %04x", cal_crc);
-    collect_device_upgrade_data_send((const char*)&cal_crc,sizeof(uint16_t),frm_num++,COLLECT_UPGRADE_FLAG_END);
-
-    heap_caps_free(data);
-    fclose(file);
-
-OPEN_FAIL:
-    collect_process = COLLECT_PROCESS_READ_DATA;
+    else{;}
 }
 
 
 void collect_send_task_handler(void *pvParameters)
 {
     uint16_t reply = 0;
-    while(1)
-    {
-        uint32_t collect_event = 0;
-        sysEvent_get(collect_dev_event_group,&collect_event);
-        if(collect_event&COLLECT_DEV_CALIB_EVENT_BIT){
-            sysEvent_clear(collect_dev_event_group,COLLECT_DEV_CALIB_EVENT_BIT);
-            collect_process = COLLECT_PROCESS_SET_CALIBRATION;
-        }else if(collect_event&COLLECT_DEV_UPGRADE_EVENT_BIT){
-            sysEvent_clear(collect_dev_event_group,COLLECT_DEV_UPGRADE_EVENT_BIT);
-            collect_process = COLLECT_PROCESS_GET_VERSION;
-        }else{;}
-
-
-        switch (collect_process)
-        {
+    uint8_t cnt = 0;
+    while(1){
+        cnt++;
+        cnt %= 20;
+        collect_device_event_handler();
+        switch (collect_process){
         case COLLECT_PROCESS_INIT:
-            collect_device_init_read();
+            collect_device_read_calibration();
+            collect_process = COLLECT_PROCESS_GET_VERSION;
             break;
         case COLLECT_PROCESS_GET_VERSION:
-            collect_devicie_version_get();
+            collect_devicie_read_version();
+            collect_process = COLLECT_PROCESS_UPGRADE;
             break;
         case COLLECT_PROCESS_UPGRADE: 
             collect_device_upgrade();
+            collect_process = COLLECT_PROCESS_READ_DATA;
             break;
         case COLLECT_PROCESS_READ_DATA:
-            collect_device_read_data();
+            if(cnt == 1){
+                collect_device_read_data();
+            }
             break;
         case COLLECT_PROCESS_SET_CALIBRATION:
-            collect_device_set_calibration();
+            // collect_device_calibration_set();
             break;
         case COLLECT_PROCESS_READ_CALIBRATION:
             collect_device_read_calibration();
             break;
+        case COLLECT_PROCESS_SET_BALANCE:
+            collect_device_balance_set();
+            collect_process = COLLECT_PROCESS_GET_BALANCE;
+            break;
+        case COLLECT_PROCESS_GET_BALANCE:
+            collect_device_balance_get();
+            collect_process = COLLECT_PROCESS_READ_DATA;
+            break;
+        case COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION:
+            collect_device_voltage_calibration_set();
+            collect_process = COLLECT_PROCESS_GET_VOLTAGE_CALIBRATION;
+            break;
+        case COLLECT_PROCESS_GET_VOLTAGE_CALIBRATION:
+            collect_device_voltage_calibration_get();
+            collect_process = COLLECT_PROCESS_READ_DATA;
+            break;
+        case COLLECT_PROCESS_SET_CO_CALIBRATION:
+            collect_device_co_calibration_set();
+            collect_process = COLLECT_PROCESS_GET_CO_CALIBRATION;
+            break;
+        case COLLECT_PROCESS_GET_CO_CALIBRATION:
+            collect_device_co_calibration_get();
+            collect_process = COLLECT_PROCESS_READ_DATA;
+            break;
+        case COLLECT_PROCESS_SET_H2_CALIBRATION:
+            collect_device_h2_calibration_set();
+            collect_process = COLLECT_PROCESS_GET_H2_CALIBRATION;
+            break;
+        case COLLECT_PROCESS_GET_H2_CALIBRATION:
+            collect_device_h2_calibration_get();
+            collect_process = COLLECT_PROCESS_READ_DATA;
+            break;
         default:
             break;
         }   
-
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
-
-
-void collect_device_init_msg_deal(uint8_t *data,uint16_t length)
-{
-    uint16_t crc=0,cal_crc=0;
-    if(data[COLLECT_DEVICE_ADDR_IDX] != COLLECT_DEVICE_ADDR) return;
-    crc = data[length-2] | data[length-1]<<8;
-    cal_crc = modbus_calculate_crc(data,length-2);
-    if(crc != cal_crc) return;
-
-    printf("init calibration read crc = %04x , cal_crc = %04x\r\n",crc,cal_crc);
-
-    uint16_t num = data[REG_NUM_IDX]<<8 | data[REG_NUM_IDX+1];
-    
-    uint16_t *data_ptr = (uint16_t *)&data[REG_DATA_IDX];
-
-    modbus_reg_write_no_reverse(0x4001,data_ptr,num/2);
-
-    collect_process = COLLECT_PROCESS_GET_VERSION;
-}
-
-void collect_device_data_msg_deal(uint8_t *data,uint16_t length)
-{
-    uint16_t crc=0,cal_crc=0;
-    if(data[COLLECT_DEVICE_ADDR_IDX] != COLLECT_DEVICE_ADDR) return;
-    crc = data[length-2] | data[length-1]<<8;
-    cal_crc = modbus_calculate_crc(data,length-2);
-    if(crc != cal_crc) return;
-
-    // printf("data crc = %04x , cal_crc = %04x\r\n",crc,cal_crc);
-   
-    uint16_t num = data[REG_NUM_IDX]<<8 | data[REG_NUM_IDX+1];
-    
-    uint16_t *data_ptr = (uint16_t *)&data[REG_DATA_IDX];
-    modbus_reg_write_no_reverse((uint16_t)0x1000,&data_ptr[0],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1002,&data_ptr[2],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1005,&data_ptr[1],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1006,&data_ptr[6],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1007,&data_ptr[7],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1008,&data_ptr[8],1);
-    modbus_reg_write_no_reverse((uint16_t)0x1009,&data_ptr[5],1);
-    modbus_reg_write_no_reverse((uint16_t)0x100A,&data_ptr[9],1);
-
-    // modbus_reg_write(0x1000,&data[REG_DATA_IDX],num/2);
-}
-
-
-void collect_device_calibration_msg_deal(uint8_t *data,uint16_t length)
-{
-    uint16_t crc=0,cal_crc=0;
-    if(data[COLLECT_DEVICE_ADDR_IDX] != COLLECT_DEVICE_ADDR) return;
-    crc = data[length-2] | data[length-1]<<8;
-    cal_crc = modbus_calculate_crc(data,length-2);
-    if(crc != cal_crc) return;
-
-    printf("calibration read crc = %04x , cal_crc = %04x\r\n",crc,cal_crc);
-
-    uint16_t num = data[REG_NUM_IDX]<<8 | data[REG_NUM_IDX+1];
-    
-    uint16_t *data_ptr = (uint16_t *)&data[REG_DATA_IDX];
-
-    modbus_reg_write_no_reverse(0x4001,data_ptr,num/2);
-
-    collect_process = COLLECT_PROCESS_READ_DATA;
-}
-
-void collect_device_version_msg_deal(uint8_t *data,uint16_t length)
-{
-    version_t version;
-    uint16_t *data_ptr = (uint16_t *)&data[REG_DATA_IDX];
-    version.year = data_ptr[0];
-    version.month = data_ptr[1];
-    version.day = data_ptr[2];
-    version.aa = data_ptr[3];
-    version.bb = data_ptr[4];
-    version.cc = data_ptr[5];
-    collect_data_reverse((uint16_t *)&version,sizeof(version_t)/2);
-
-    ESP_LOGI(TAG, "collect_device_run_soft_version is:%d-%d-%d  %d.%d.%d",
-            (int)version.year,(int)version.month,(int)version.day,
-            (int)version.aa,(int)version.bb,(int)version.cc);
-
-    modbus_reg_write_no_reverse(REG_COLLECT_VERSION_YEAR,data_ptr,6);
-
-
-    if(0 > memcmp(&version,&collect_version,sizeof(version_t))){
-        collect_process = COLLECT_PROCESS_UPGRADE;
-    } else{
-        collect_process = COLLECT_PROCESS_READ_DATA;
-    } 
-}
-
-
-void collect_msg_deal(uint8_t *data,uint16_t length)
-{
-    switch (collect_process)
-    {
-    case COLLECT_PROCESS_INIT:
-        collect_device_init_msg_deal(data,length);
-        break;
-    case COLLECT_PROCESS_GET_VERSION:
-        collect_device_version_msg_deal(data,length);
-        break;
-    case COLLECT_PROCESS_READ_DATA:
-        collect_device_data_msg_deal(data,length);
-        break;
-    case COLLECT_PROCESS_READ_CALIBRATION:
-        collect_device_calibration_msg_deal(data,length);
-        break;
-    case COLLECT_PROCESS_UPGRADE:
-        break;
-    default:
-        break;
+        collect_device_current_data_updata();
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
 }
 
@@ -442,14 +817,11 @@ void collect_recive_task_handler(void *pvParameters)
     uint16_t len = 0;
     size_t buffered_size = 0;
 
-    while(1)
-    {
+    while(1){
         uart_event_t event;
         int rx_bytes = 0;
-        if(pdTRUE == xQueueReceive(collect_device_queue,&event,portMAX_DELAY))
-        {
-            switch (event.type)
-            {
+        if(pdTRUE == xQueueReceive(collect_device_queue,&event,portMAX_DELAY)){
+            switch (event.type){
                 case UART_DATA:
                     if(event.timeout_flag == true){
                         uart_get_buffered_data_len(COLLECT_UART_PORT,&buffered_size);
@@ -457,23 +829,16 @@ void collect_recive_task_handler(void *pvParameters)
                             if(buffered_size > 200){
                                 rx_bytes = uart_read_bytes(COLLECT_UART_PORT, rx_data, 200, 10 / portTICK_PERIOD_MS);
                                 if(rx_bytes == 0) break;
-                                collect_msg_deal(rx_data,rx_bytes);
+                                collect_device_push_data_to_rx_fifo(rx_data,rx_bytes);
                                 buffered_size -= rx_bytes;
                             }else{
                                 rx_bytes = uart_read_bytes(COLLECT_UART_PORT, rx_data, buffered_size, 10 / portTICK_PERIOD_MS);
                                 if(rx_bytes == 0) break;
-                                collect_msg_deal(rx_data,rx_bytes);
+                                collect_device_push_data_to_rx_fifo(rx_data,rx_bytes);
                                 buffered_size -= rx_bytes;
                             }
-                        }
-                        
+                        }   
                     }
-                   
-                    
-                    // modbus_msg_deal_handler(rx_data,rx_bytes);
-                    // rx_data[rx_bytes] = 0x00;
-                    // ESP_LOGI(TAG,"*********************************************");
-                    // ESP_LOGI(TAG,"rs485 接收数量�?%d\r\n",rx_bytes);
                     break;
                 default:
                     break;
@@ -483,7 +848,16 @@ void collect_recive_task_handler(void *pvParameters)
 }
 
 
-
+void collect_device_init(void)
+{
+    collect_rx_fifo.pos = 0;
+    collect_rx_fifo.tail = 0;
+    collect_device_uart_config();
+    collect_process = COLLECT_PROCESS_INIT;
+    collect_device_bin_soft_version_get();
+    xTaskCreatePinnedToCore(collect_send_task_handler,"rs485_send_task",1024*5,NULL,5,NULL,0);
+    xTaskCreatePinnedToCore(collect_recive_task_handler,"rs485_recive_task",1024*5,NULL,5,NULL,0);
+}
 
 
 

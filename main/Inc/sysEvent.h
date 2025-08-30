@@ -14,6 +14,10 @@ extern EventGroupHandle_t sys_cfg_event_group;
 /******************************************************************************/
 #define COLLECT_DEV_CALIB_EVENT_BIT       (1<<0)        //底板校准
 #define COLLECT_DEV_UPGRADE_EVENT_BIT     (1<<1)        //底板升级
+#define COLLECT_DEV_BALANCE_EVENT_BIT     (1<<2)        //底板均衡模式设置
+#define COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT     (1<<3)        //底板电压校准设置
+#define COLLECT_DEV_CO_CALIB_EVENT_BIT     (1<<4)        //底板电压校准设置
+#define COLLECT_DEV_H2_CALIB_EVENT_BIT     (1<<5)        //底板电压校准设置
 extern EventGroupHandle_t collect_dev_event_group;
 
 

@@ -259,17 +259,17 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     /*校准寄存器�?�问标识判断*/
 
-	uint16_t open_flag = 0;
-	if(addr == 0x4000){
-		open_flag = data[REG_DATA_IDX]<<8 | data[REG_DATA_IDX+1];
-	}else{
-		open_flag = ((ack_reg[0]&0xFF)<<8) | ((ack_reg[0]>>8)&0xFF);
-	}
-	if(addr >= 0x4000 && open_flag != 1 && num != 1){
-		/* 地址不可访问 */
-        modbus_error_ask(cmd,0x04);
-        return;
-	}else 
+	// uint16_t open_flag = 0;
+	// if(addr == 0x4000){
+	// 	open_flag = data[REG_DATA_IDX]<<8 | data[REG_DATA_IDX+1];
+	// }else{
+	// 	open_flag = ((ack_reg[0]&0xFF)<<8) | ((ack_reg[0]>>8)&0xFF);
+	// }
+	// if(addr >= 0x4000 && open_flag != 1 && num != 1){
+	// 	/* 地址不可访问 */
+    //     modbus_error_ask(cmd,0x04);
+    //     return;
+	// }else 
 
     memcpy(ack_reg,&data[REG_DATA_IDX],num*2);
 
@@ -286,11 +286,11 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     rs485_data_send(ack_msg,pos);
 
-    if(open_flag == 1)
-	{
-		/*设置校准系数保存标志*/
+    // if(open_flag == 1)
+	// {
+	// 	/*设置校准系数保存标志*/
         
-	}
+	// }
 }
 
 

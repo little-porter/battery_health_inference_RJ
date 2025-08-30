@@ -9,3 +9,4 @@ app1,       app,    ota_0,      0x400000,   0x300000,
 app2,       app,    ota_1,      0x700000,   0x300000,
 lfs,        data,   littlefs,          ,    0x600000, 
 
+
