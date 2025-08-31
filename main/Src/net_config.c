@@ -34,10 +34,10 @@ typedef struct _device_config_t
     uint16_t voltage_low_threshold;             //电压低报警阈值
     int16_t current_discharge_threshold;        //电流放电报警阈值
     uint16_t current_charge_threshold;          //电流充电报警阈值
-    char mac[20];                               //MAC地址 
 }device_config_t;
 
 device_config_t device_cfg;
+ char devcie_mac[20];                               //MAC地址 
 
 void device_config_task_handler(void *pvParameters);
 void net_config_save(void);
@@ -64,7 +64,8 @@ void net_config_mac_read(void)
         p += n;
     }
     printf("MAC: %s\n", mac_str);
-    strncpy(device_cfg.mac,mac_str,sizeof(device_cfg.mac));
+    strncpy(device_mac,mac_str,sizeof(device_mac));
+    modbus_reg_write_no_reverse(REG_MAC_ADDR,(uint16_t *)device_mac,(sizeof(device_mac)+1)/2);
 }
 
 
@@ -74,6 +75,7 @@ void net_config_init(void)
     xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设备系统配置任务
 
     littlefs_file_data_t config_file;
+    //读取设备MAC地址
     net_config_mac_read();
     // littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
     bool ret = littlefs_ops_read_file(device_file,&config_file);
@@ -86,12 +88,11 @@ void net_config_init(void)
     if(config_file.size == sizeof(device_cfg)){
         memcpy(&device_cfg,config_file.data,sizeof(device_cfg));
         printf("MAC: %s\n", device_cfg.mac);
-        modbus_reg_write_no_reverse(REG_MAC_ADDR,(uint16_t *)device_cfg.mac,(sizeof(device_cfg.mac)+1)/2);
+        
         modbus_reg_write_no_reverse(REG_SERIAL_ADDR,(uint16_t *)device_cfg.serial,(sizeof(device_cfg.serial)+1)/2);
         ESP_LOGI(TAG, "read device config data success");
     }else{
         modbus_reg_read_no_reverse(REG_MODBUS_ADDR,(uint16_t *)&device_cfg,(sizeof(device_cfg)+1)/2);
-        modbus_reg_write_no_reverse(REG_MAC_ADDR,(uint16_t *)device_cfg.mac,(sizeof(device_cfg.mac)+1)/2);
         littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
         ESP_LOGI(TAG, "read device config data error");
     }
