@@ -18,6 +18,6 @@ void modbus_reg_read(uint16_t addr,uint16_t *data,uint16_t num);
 void modbus_reg_read_no_reverse(uint16_t addr,uint16_t *data,uint16_t num);
 // void modbus_reg_data_reverse(uint16_t *reg,uint16_t num);
 
-#define DEVICE_ID  21
+#define DEVICE_ID  19
 
 #endif

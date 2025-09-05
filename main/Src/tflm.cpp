@@ -6,7 +6,7 @@
 // #include "all_ops_resolver.h"
 // #include "model_data1.c"
 
-#define TFLM_AREA_SIZE  (4 * 1024 * 1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间计算结果）
+#define TFLM_AREA_SIZE  (4 * 1024 * 1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间�?�算结果�?
 
 
 // 2. 创建操作符解析器(模型使用方法)
@@ -126,7 +126,7 @@ static void AllOpsResolver(tflite::MicroMutableOpResolver<128> *resolver)
     resolver->AddZerosLike();
 }
 
-/*初始化解释器*/
+/*初�?�化解释�?*/
 extern "C"  void tflm_create(tflm_module_t *tflm)
 {
     //数据空间判断
@@ -144,7 +144,7 @@ extern "C"  void tflm_create(tflm_module_t *tflm)
         return;
     }
     // static tflite::MicroInterpreter interpreter_temp(tl_model, micro_op_resolver, tf_area, TFLM_AREA_SIZE,nullptr,nullptr,true);
-    /* 创建解释器 */
+    /* 创建解释�? */
     tflite::MicroInterpreter *interpreter = new tflite::MicroInterpreter(tl_model, micro_op_resolver, tflm_area, TFLM_AREA_SIZE);
     /*分配张量内存*/
     TfLiteStatus allocate_status = interpreter->AllocateTensors();
@@ -153,12 +153,12 @@ extern "C"  void tflm_create(tflm_module_t *tflm)
         MicroPrintf("AllocateTensors() failed");
         return;
     }
-    if(interpreter->input_tensor(0)->dims->size != 3)
-    {
-        MicroPrintf("模型错误!");
-        interpreter->~MicroInterpreter();       //释放资源
-        return;
-    }
+    // if(interpreter->input_tensor(0)->dims->size != 3)
+    // {
+    //     MicroPrintf("模型错�??!");
+    //     interpreter->~MicroInterpreter();       //释放资源
+    //     return;
+    // }
 
     tflm->interpreter = interpreter;
     tflm->input_row = interpreter->input_tensor(0)->dims->data[1];
@@ -181,24 +181,24 @@ extern "C"  void tflm_create(tflm_module_t *tflm)
 
 extern "C" void tflm_init(void)
 {
-    /*初始化张量内存*/
+    /*初�?�化张量内存*/
     tflm_area = (uint8_t *)heap_caps_malloc(TFLM_AREA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
-    for(int i = 0;i < 280; i++)
-    {
-        test_data[i][0] = test_step[i];
-        test_data[i][1] = test_v[i];
-        test_data[i][2] = test_Time[i];
-    }
+    // for(int i = 0;i < 280; i++)
+    // {
+    //     test_data[i][0] = test_step[i];
+    //     test_data[i][1] = test_v[i];
+    //     test_data[i][2] = test_Time[i];
+    // }
 
-    /*初始化模型使用方法*/
+    /*初�?�化模型使用方法*/
     AllOpsResolver(&micro_op_resolver);
 
-    /*初始化SOC模型*/
+    /*初�?�化SOC模型*/
     // tflm_soc.model_data = model_data1;
     // tflm_create(&tflm_soc);
 #ifdef USE_SOH_MODEL 
-    /*初始化SOH模型*/
+    /*初�?�化SOH模型*/
     tflm_soh.model_data = model_data1;
     tflm_soh.tf_area = tflm_area;
     tflm_interpreter_init(tflm_soh.interpreter, tflm_soh.model_data, tflm_soh.tf_area);
@@ -211,7 +211,7 @@ extern "C" void tflm_run(tflm_module_t *tflm,float *input_data,uint32_t input_nu
     // tflm_interpreter_init(&tflm_soc.interpreter, tflm_soc.model_data, tflm_soc.tf_area);
    if(tflm->interpreter == NULL)
    {
-      MicroPrintf("未加载模型，解释器为空！");
+      MicroPrintf("interpreter is null!");
    }
 
     tflite::MicroInterpreter *interpreter = (tflite::MicroInterpreter *)tflm->interpreter;
@@ -225,7 +225,7 @@ extern "C" void tflm_run(tflm_module_t *tflm,float *input_data,uint32_t input_nu
         input->data.f[i] = input_data[i];
     }
 
-    /*进行推理*/
+    /*进�?�推�?*/
     TfLiteStatus invoke_status = interpreter->Invoke();
     if(invoke_status != kTfLiteOk) 
     {

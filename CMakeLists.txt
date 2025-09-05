@@ -4,11 +4,11 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_SRC_DIRS "." "./Src")
+set(PROJECT_SRC_DIRS "." "./Src" "./model")
 set(PROJECT_INC_DIRS "." "./Inc")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-set(PROJECT_VER "2.1.4")
+set(PROJECT_VER "2.1.6")
 project(battery_inference_ota)
 

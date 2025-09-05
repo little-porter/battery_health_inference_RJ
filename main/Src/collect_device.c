@@ -15,7 +15,7 @@ static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cach
 *底板串口信息定义
 ************************************************************************************/
 #define COLLECT_UART_PORT     UART_NUM_1                //使用串口1
-#define COLLECT_UART_BAUD     4800                      //串口波特率(不能大于9600，隔离电路决定)
+#define COLLECT_UART_BAUD     9600                      //串口波特率(不能大于9600，隔离电路决定)
 #define COLLECT_UART_TX_PIN   GPIO_NUM_43               //GPIO43
 #define COLLECT_UART_RX_PIN   GPIO_NUM_44               //GPIO44
 // #define COLLECT_EN_PIN        GPIO_NUM_45
@@ -123,7 +123,10 @@ typedef struct _collect_device
 
 collect_process_t collect_process = COLLECT_PROCESS_INIT;       //采集底板交互状态
 
-#define  CALIBRATE_TABLE_LEN        20                          //校准表长度
+#define  CALIBRATE_TABLE_VOLTAGE_ADDR   0
+#define  CALIBRATE_TABLE_CO_ADDR        4
+#define  CALIBRATE_TABLE_H2_ADDR        16  
+#define  CALIBRATE_TABLE_LEN        30                          //校准表长度
 uint16_t collect_calibrate_table[CALIBRATE_TABLE_LEN];          //校准表
 collect_device_t collect_device;                                //采集底板设备
 /************************************************************************************
@@ -480,7 +483,7 @@ void collect_device_read_calibration(void)
 {
     printf("[collect_device] Read Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
-    uint16_t read_reg_addr = 0x4001,read_reg_num = 12;
+    uint16_t read_reg_addr = 0x4001,read_reg_num = 28;
     collect_device_clear_rx_fifo();
     collect_device_reg_read(read_reg_addr,read_reg_num);
 
@@ -540,33 +543,33 @@ void collect_device_voltage_calibration_check(void)
 {
     uint16_t calibration[4] = {0};
     modbus_reg_read_no_reverse(0x4001,&calibration,4);
-    if(0 != memcmp(calibration,&collect_calibrate_table[0],sizeof(calibration))){
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],sizeof(calibration))){
         sysEvent_set(collect_dev_event_group,COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT);
         // modbus_reg_write_no_reverse(0x4001,&collect_calibrate_table[0],4);
-        memcpy(&collect_calibrate_table[0],calibration,sizeof(uint16_t)*4);
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],calibration,sizeof(uint16_t)*4);
     }
 
 }
 void collect_device_co_calibration_check(void)
 {
-    uint16_t calibration[4] = {0};
+    uint16_t calibration[12] = {0};
     uint16_t size = sizeof(calibration);
-    modbus_reg_read_no_reverse(0x4005,&calibration,4);
-    if(0 != memcmp(calibration,&collect_calibrate_table[4],sizeof(calibration))){
+    modbus_reg_read_no_reverse(0x4005,&calibration,12);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],sizeof(calibration))){
         sysEvent_set(collect_dev_event_group,COLLECT_DEV_CO_CALIB_EVENT_BIT);
         // modbus_reg_write_no_reverse(0x4005,&collect_calibrate_table[4],4);
-        memcpy(&collect_calibrate_table[4],calibration,sizeof(calibration));
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],calibration,sizeof(calibration));
     }
 
 }
 void collect_device_h2_calibration_check(void)
 {
-    uint16_t calibration[4] = {0};
-    modbus_reg_read_no_reverse(0x4009,&calibration,4);
-    if(0 != memcmp(calibration,&collect_calibrate_table[8],sizeof(calibration))){
+    uint16_t calibration[12] = {0};
+    modbus_reg_read_no_reverse(0x4011,&calibration,12);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],sizeof(calibration))){
         sysEvent_set(collect_dev_event_group,COLLECT_DEV_H2_CALIB_EVENT_BIT);
         // modbus_reg_write_no_reverse(0x4009,&collect_calibrate_table[8],4);
-        memcpy(&collect_calibrate_table[8],calibration,sizeof(uint16_t)*4);
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],calibration,sizeof(calibration));
     }
 
 }
@@ -666,9 +669,9 @@ void collect_device_co_calibration_set(void)
     collect_device_calibration_open();
     printf("[collect_device] Set CO Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
-    uint16_t read_reg_addr = 0x4005,read_reg_num = 4;
+    uint16_t read_reg_addr = 0x4005,read_reg_num = 12;
     collect_device_clear_rx_fifo();
-    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[4]);
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR]);
 
     vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
@@ -679,7 +682,7 @@ void collect_device_co_calibration_get(void)
 {
     printf("[collect_device] Get CO Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
-    uint16_t read_reg_addr = 0x4005,read_reg_num = 4;
+    uint16_t read_reg_addr = 0x4005,read_reg_num = 12;
     collect_device_clear_rx_fifo();
     collect_device_reg_read(read_reg_addr,read_reg_num);
 
@@ -691,9 +694,9 @@ void collect_device_h2_calibration_set(void)
     collect_device_calibration_open();
     printf("[collect_device] Set H2 Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
-    uint16_t read_reg_addr = 0x4009,read_reg_num = 4;
+    uint16_t read_reg_addr = 0x4011,read_reg_num = 12;
     collect_device_clear_rx_fifo();
-    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[8]);
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR]);
 
     vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
@@ -704,7 +707,7 @@ void collect_device_h2_calibration_get(void)
 {
     printf("[collect_device] Get H2 Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
-    uint16_t read_reg_addr = 0x4009,read_reg_num = 4;
+    uint16_t read_reg_addr = 0x4011,read_reg_num = 12;
     collect_device_clear_rx_fifo();
     collect_device_reg_read(read_reg_addr,read_reg_num);
 
@@ -754,7 +757,7 @@ void collect_send_task_handler(void *pvParameters)
             break;
         case COLLECT_PROCESS_GET_VERSION:
             collect_devicie_read_version();
-            collect_process = COLLECT_PROCESS_UPGRADE;
+            collect_process = COLLECT_PROCESS_READ_DATA;
             break;
         case COLLECT_PROCESS_UPGRADE: 
             collect_device_upgrade();

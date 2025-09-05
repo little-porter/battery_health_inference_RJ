@@ -13,6 +13,8 @@
 
 #include "net_config.h"
 
+#include "soc.h"
+
 static const char *TAG = "PRJ_MAIN";
 
 void collect_device_power_on(void)
@@ -41,6 +43,9 @@ void app_main(void)
     net_config_init();
     collect_device_power_on();
     collect_device_init();
+
+    
+    soc_modle_init();
 
     while (1)
     {

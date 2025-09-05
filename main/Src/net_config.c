@@ -19,25 +19,25 @@ char *device_file = "device_config.text";
 typedef struct _device_config_t
 {
     uint16_t modbus_addr;  
-    uint16_t device_type;                       //设备类型
+    uint16_t device_type;                       //设�?�类�?
     uint16_t device_addr;                       //modbus地址
     uint16_t cap;                               //电池额定容量  
     uint16_t reset_flag;                        //升级标志
-    uint16_t low_power_flag;                    //设备地址  
+    uint16_t low_power_flag;                    //设�?�地址  
     uint16_t balance_falg;
-    char serial[20];                            //序列号
-    uint16_t h2_threshold;                      //H2报警阈值
-    uint16_t co_threshold;                      //CO报警阈值
-    uint16_t temp_threshold;                    //温度报警阈值
-    uint16_t temp_up_threshold;                 //温度升报警阈值
-    uint16_t voltage_high_threshold;            //电压高报警阈值
-    uint16_t voltage_low_threshold;             //电压低报警阈值
-    int16_t current_discharge_threshold;        //电流放电报警阈值
-    uint16_t current_charge_threshold;          //电流充电报警阈值
+    char serial[20];                            //序列�?
+    uint16_t h2_threshold;                      //H2报�?�阈�?
+    uint16_t co_threshold;                      //CO报�?�阈�?
+    uint16_t temp_threshold;                    //温度报�?�阈�?
+    uint16_t temp_up_threshold;                 //温度升报警阈�?
+    uint16_t voltage_high_threshold;            //电压高报警阈�?
+    uint16_t voltage_low_threshold;             //电压低报警阈�?
+    int16_t current_discharge_threshold;        //电流放电报�?�阈�?
+    uint16_t current_charge_threshold;          //电流充电报�?�阈�?
 }device_config_t;
-
+    
 device_config_t device_cfg;
- char devcie_mac[20];                               //MAC地址 
+char device_mac[20];                               //MAC地址 
 
 void device_config_task_handler(void *pvParameters);
 void net_config_save(void);
@@ -58,7 +58,7 @@ void net_config_mac_read(void)
             n = snprintf(p,remaining,"%02x-",mac[i]);
         }
         
-        if (n < 0 || (size_t)n >= remaining) { // 检查错误或缓冲区不足
+        if (n < 0 || (size_t)n >= remaining) { // 检查错�?或缓冲区不足
             break;
         }
         p += n;
@@ -72,10 +72,10 @@ void net_config_mac_read(void)
 
 void net_config_init(void)
 {
-    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设备系统配置任务
+    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设�?�系统配�?任务
 
     littlefs_file_data_t config_file;
-    //读取设备MAC地址
+    //读取设�?�MAC地址
     net_config_mac_read();
     // littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
     bool ret = littlefs_ops_read_file(device_file,&config_file);
@@ -85,14 +85,18 @@ void net_config_init(void)
         ESP_LOGI(TAG, "read device config fail");
         return;
     }
+    uint16_t dev_id = DEVICE_ID;
+    device_cfg.modbus_addr = dev_id;//dev_id>>8|((dev_id&0xff)<<8);
     if(config_file.size == sizeof(device_cfg)){
         memcpy(&device_cfg,config_file.data,sizeof(device_cfg));
-        printf("MAC: %s\n", device_cfg.mac);
+        printf("MAC: %s\n", device_mac);
         
+        modbus_reg_write(REG_MODBUS_ADDR,(uint16_t *)&device_cfg,7);
         modbus_reg_write_no_reverse(REG_SERIAL_ADDR,(uint16_t *)device_cfg.serial,(sizeof(device_cfg.serial)+1)/2);
+        modbus_reg_write(0x0011,(uint16_t *)&device_cfg.h2_threshold,14);
         ESP_LOGI(TAG, "read device config data success");
     }else{
-        modbus_reg_read_no_reverse(REG_MODBUS_ADDR,(uint16_t *)&device_cfg,(sizeof(device_cfg)+1)/2);
+        modbus_reg_write(REG_MODBUS_ADDR,(uint16_t *)&device_cfg,(sizeof(device_cfg)+1)/2);
         littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
         ESP_LOGI(TAG, "read device config data error");
     }
@@ -108,11 +112,12 @@ void net_config_save(void)
     uint32_t event = 0;
     sysEvent_get(sys_cfg_event_group,&event);
     if(event&SYS_CFG_SAVE_EVENT_BIT){
+        ESP_LOGI(TAG, "reset config,save config!");
         // modbus_reg_read_no_reverse(REG_MAC_ADDR,(uint16_t*)device_cfg.mac,(sizeof(device_cfg.mac)+1)/2);
         // modbus_reg_read_no_reverse(REG_SERIAL_ADDR,(uint16_t *)device_cfg.serial,(sizeof(device_cfg.serial)+1)/2);
         modbus_reg_read(REG_MODBUS_ADDR,(uint16_t *)&device_cfg,(sizeof(device_cfg)+1)/2);
         littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
-        ESP_LOGI(TAG, "reset config success, mac:%s, serial:%s",mac,serial);
+        ESP_LOGI(TAG, "reset config success, mac:%s, serial:%s",device_mac,device_cfg.serial);
         sysEvent_clear(sys_cfg_event_group,SYS_CFG_SAVE_EVENT_BIT);
     }
 }
@@ -162,7 +167,7 @@ void device_alarm_handler(void)
     }else if(abs(voltage/1000) < device_cfg.voltage_low_threshold){
         alarm |= ALARM_UNDERVOLTAGE;
     }
-    ESP_LOGI(TAG, "氢气:%d ,一氧化碳:%d",(int)h2,(int)co);
+    ESP_LOGI(TAG, "氢气:%d ,一氧化�?:%d",(int)h2,(int)co);
     modbus_reg_write(0x200C,&alarm,1);
 }
 
