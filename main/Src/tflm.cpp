@@ -6,7 +6,7 @@
 // #include "all_ops_resolver.h"
 // #include "model_data1.c"
 
-#define TFLM_AREA_SIZE  (4 * 1024 * 1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间�?�算结果�?
+#define TFLM_AREA_SIZE  (300*1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间�?�算结果�??
 
 
 // 2. 创建操作符解析器(模型使用方法)
@@ -126,7 +126,7 @@ static void AllOpsResolver(tflite::MicroMutableOpResolver<128> *resolver)
     resolver->AddZerosLike();
 }
 
-/*初�?�化解释�?*/
+/*初�?�化解释�??*/
 extern "C"  void tflm_create(tflm_module_t *tflm)
 {
     //数据空间判断
@@ -144,7 +144,7 @@ extern "C"  void tflm_create(tflm_module_t *tflm)
         return;
     }
     // static tflite::MicroInterpreter interpreter_temp(tl_model, micro_op_resolver, tf_area, TFLM_AREA_SIZE,nullptr,nullptr,true);
-    /* 创建解释�? */
+    /* 创建解释�?? */
     tflite::MicroInterpreter *interpreter = new tflite::MicroInterpreter(tl_model, micro_op_resolver, tflm_area, TFLM_AREA_SIZE);
     /*分配张量内存*/
     TfLiteStatus allocate_status = interpreter->AllocateTensors();
@@ -225,7 +225,7 @@ extern "C" void tflm_run(tflm_module_t *tflm,float *input_data,uint32_t input_nu
         input->data.f[i] = input_data[i];
     }
 
-    /*进�?�推�?*/
+    /*进�?�推�??*/
     TfLiteStatus invoke_status = interpreter->Invoke();
     if(invoke_status != kTfLiteOk) 
     {
