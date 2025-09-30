@@ -8,7 +8,7 @@
 #define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优�?)
 uint16_t crcTable[256];     // CRC-16 table
 
-#define  REG_TABLE_LEN    100
+#define  REG_TABLE_LEN    150
 uint16_t config_reg_table[REG_TABLE_LEN];
 uint16_t data_reg_table[REG_TABLE_LEN];
 uint16_t result_reg_table[REG_TABLE_LEN];
