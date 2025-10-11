@@ -9,7 +9,7 @@ static char *TAG = "net_config";
 
 #define LITTLEFS_PATH     "/littlefs"
 
-char *file = "/littlefs/NetConfig.json";
+char *file_config = "/littlefs/config.json";
 char *device_file = "device_config.text";
 
 #define REG_MODBUS_ADDR     0x0000
@@ -19,25 +19,81 @@ char *device_file = "device_config.text";
 typedef struct _device_config_t
 {
     uint16_t modbus_addr;  
-    uint16_t device_type;                       //设�?�类�?
+    uint16_t device_type;                       //设�?�类�?
     uint16_t device_addr;                       //modbus地址
     uint16_t cap;                               //电池额定容量  
     uint16_t reset_flag;                        //升级标志
-    uint16_t low_power_flag;                    //设�?�地址  
+    uint16_t low_power_flag;                    //设�?�地址  
     uint16_t balance_falg;
-    char serial[20];                            //序列�?
-    uint16_t h2_threshold;                      //H2报�?�阈�?
-    uint16_t co_threshold;                      //CO报�?�阈�?
-    uint16_t temp_threshold;                    //温度报�?�阈�?
-    uint16_t temp_up_threshold;                 //温度升报警阈�?
-    uint16_t voltage_high_threshold;            //电压高报警阈�?
-    uint16_t voltage_low_threshold;             //电压低报警阈�?
-    int16_t current_discharge_threshold;        //电流放电报�?�阈�?
-    uint16_t current_charge_threshold;          //电流充电报�?�阈�?
+    char serial[20];                            //序列�?
+    uint16_t h2_threshold;                      //H2报�?�阈�?
+    uint16_t co_threshold;                      //CO报�?�阈�?
+    uint16_t temp_threshold;                    //温度报�?�阈�?
+    uint16_t temp_up_threshold;                 //温度升报警阈�?
+    uint16_t voltage_high_threshold;            //电压高报警阈�?
+    uint16_t voltage_low_threshold;             //电压低报警阈�?
+    int16_t current_discharge_threshold;        //电流放电报�?�阈�?
+    uint16_t current_charge_threshold;          //电流充电报�?�阈�?
 }device_config_t;
     
 device_config_t device_cfg;
 char device_mac[20];                               //MAC地址 
+
+void net_config_read(void)
+{
+    FILE* file = fopen(file_config, "r");
+    if(file == NULL){
+        ESP_LOGE(TAG, "Failed to open file for reading");
+    }
+    fseek(file, 0L, SEEK_END);  // 将文件指针移动到文件�?�?
+    size_t size = ftell(file);
+    rewind(file);
+    uint8_t *data = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
+    memset(data, 0, size + 1);
+    size_t read_num = fread(data, 1, size, file);
+    if(read_num != size){
+        ESP_LOGE(TAG, "Failed to read file");
+        heap_caps_free(data);
+        fclose(file);
+    }
+    heap_caps_free(data);
+    fclose(file);
+
+    cJSON *root = cJSON_Parse((char *)data);
+    if(root != NULL){
+        ESP_LOGE(TAG, "Failed to parse JSON");
+    }else{
+        if(!cJSON_IsArray(root)){
+            ESP_LOGE(TAG, "JSON is not an object");
+        }else{
+            cJSON *device = cJSON_GetObjectItem(root, "device");
+            if(device != NULL){
+                for(int i = 0; i < cJSON_GetArraySize(device); i++){
+                    cJSON *item = cJSON_GetObjectItem(device, "serial");
+                    if (!item){
+                        continue;
+                    }else{
+                        if(0 == strcmp(item->valuestring,device_cfg.serial)){       //比较序列号获取device_id
+                            device_cfg.device_addr = cJSON_GetObjectItem(device, "id")->valueint;
+                        }else{
+                            continue;
+                        }
+                    }
+                    
+                }
+            }else{
+                ESP_LOGE(TAG, "JSON not get device type");
+            }
+        }
+        cJSON_Delete(root);
+    }
+
+}
+
+
+
+
+
 
 void device_config_task_handler(void *pvParameters);
 void net_config_save(void);
@@ -58,7 +114,7 @@ void net_config_mac_read(void)
             n = snprintf(p,remaining,"%02x-",mac[i]);
         }
         
-        if (n < 0 || (size_t)n >= remaining) { // 检查错�?或缓冲区不足
+        if (n < 0 || (size_t)n >= remaining) { // 检查错�?或缓冲区不足
             break;
         }
         p += n;
@@ -72,10 +128,10 @@ void net_config_mac_read(void)
 
 void net_config_init(void)
 {
-    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设�?�系统配�?任务
+    xTaskCreatePinnedToCore(device_config_task_handler,"devcfg_task",1024*3,NULL,6,NULL,0);     //创建设�?�系统配�?任务
 
     littlefs_file_data_t config_file;
-    //读取设�?�MAC地址
+    //读取设�?�MAC地址
     net_config_mac_read();
     // littlefs_ops_write_file(device_file,(const char*)&device_cfg,sizeof(device_cfg));
     bool ret = littlefs_ops_read_file(device_file,&config_file);
@@ -167,7 +223,7 @@ void device_alarm_handler(void)
     }else if(abs(voltage/1000) < device_cfg.voltage_low_threshold){
         alarm |= ALARM_UNDERVOLTAGE;
     }
-    ESP_LOGI(TAG, "氢气:%d ,一氧化�?:%d",(int)h2,(int)co);
+    ESP_LOGI(TAG, "氢气:%d ,一氧化�?:%d",(int)h2,(int)co);
     modbus_reg_write(0x200C,&alarm,1);
 }
 

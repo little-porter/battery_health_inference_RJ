@@ -7,6 +7,7 @@
 #define VOLTAGE_REG      0x1003
 #define CURRENT_REG      0x1000
 #define CAPACITY_REG     0x0003
+#define SOC_REAL_REG     0x2000
 
 float g_socValue = 0;
 float g_capacity = 0;
@@ -60,6 +61,8 @@ void soc_init_value_get(void)
     g_socValue = ocv_soc_get(voltage);
     g_capacity = capacity;
    
+    uint16_t soc_real = (uint16_t)(g_socValue*100);
+    modbus_reg_write(SOC_REAL_REG,&soc_real,1);
 }
 
 void soc_calibrate(void)
@@ -107,7 +110,7 @@ void soc_charge_calibrate(void)
     modbus_reg_read(CURRENT_REG,(uint16_t *)&current,1);
     current = filter_data_calculate(&g_current_filter,current);
     if(abs(voltage)>4*1000 && abs(current)<10){
-        g_socValue = 1.00;
+        g_socValue = 0.99;
     }
 
 }
@@ -139,6 +142,8 @@ void soc_estimate_handler(void *parameter)
             g_socValue = Q/g_capacity;
         }
         
+        uint16_t soc_real = (uint16_t)(g_socValue*100);
+        modbus_reg_write(SOC_REAL_REG,&soc_real,1);
 
         vTaskDelay(pdMS_TO_TICKS(1000));        /* code */
     }
