@@ -6,7 +6,7 @@
 // #include "all_ops_resolver.h"
 // #include "model_data1.c"
 
-#define TFLM_AREA_SIZE  (300*1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间�?�算结果�??
+#define TFLM_AREA_SIZE  (3*1024*1024)           // 3M   张量数据存储空间（存储模型输入、输出、中间�?�算结果�??
 
 
 // 2. 创建操作符解析器(模型使用方法)
@@ -215,9 +215,10 @@ extern "C" void tflm_run(tflm_module_t *tflm,float *input_data,uint32_t input_nu
    }
 
     tflite::MicroInterpreter *interpreter = (tflite::MicroInterpreter *)tflm->interpreter;
+    interpreter->AllocateTensors();
     TfLiteTensor *input  = interpreter->input(0);
     TfLiteTensor *output = interpreter->output(0);
-    interpreter->AllocateTensors();
+    
 
     /*设置输入张量数据*/
     for(int i = 0; i < input_num; i++)

@@ -79,7 +79,7 @@ void rs485_driver_init(rs485_driver_t *rs485_drv)
     gpio_config(&io_conf);
 
     // xTaskCreatePinnedToCore(rs485_send_task_handler,"rs485_send_task",1024*2,rs485_drv,5,NULL,0);
-    xTaskCreatePinnedToCore(rs485_recive_task_handler,"rs485_recive_task",1024*5,rs485_drv,6,NULL,0);
+    xTaskCreatePinnedToCore(rs485_recive_task_handler,"rs485RecTask",1024*5,rs485_drv,6,NULL,0);
 
     ESP_LOGI(TAG,"RS485 init success!");
     // uint8_t msg[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x01, 0x0A ,0x84};
@@ -136,9 +136,6 @@ void rs485_recive_task_handler(void *pvParameters)
         uart_event_t event;
         int rx_bytes = 0;
         size_t buffered_size = 0;
-        // rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, 2408, pdMS_TO_TICKS(150));
-        // if(0 == rx_bytes)  continue;
-        // modbus_msg_deal_handler(rx_data,rx_bytes);
 
         if(pdTRUE == xQueueReceive(rs485_drv->uart_queue,&event,portMAX_DELAY))
         {
@@ -146,21 +143,24 @@ void rs485_recive_task_handler(void *pvParameters)
             {
                 case UART_DATA:
                     if(event.timeout_flag == true){
+                        uint16_t reply = 3;
                         uart_get_buffered_data_len(rs485_drv->uart_port,&buffered_size);
-                        // if(buffered_size <= 5) continue;
                         while(buffered_size){
                             if(buffered_size > 2048){
                                 rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, 2048, portMAX_DELAY);
-                                if(0 == rx_bytes)  break;
-                                modbus_msg_deal_handler(rx_data,rx_bytes);
-                                buffered_size -= rx_bytes;
                             }else{
                                 rx_bytes = uart_read_bytes(rs485_drv->uart_port, rx_data, buffered_size, portMAX_DELAY);
-                                if(0 == rx_bytes)  break;
-                                modbus_msg_deal_handler(rx_data,rx_bytes);
-                                buffered_size -= rx_bytes;
                             }
-                        }  
+                            if(0 == rx_bytes){
+                                uart_get_buffered_data_len(rs485_drv->uart_port,&buffered_size);
+                                ESP_LOGW(TAG, "RS485 recive data len:%d",buffered_size);
+                                reply--;
+                                if(reply == 0) {break;}else {continue;}
+                            }  
+                            modbus_msg_deal_handler(rx_data,rx_bytes);
+                            uart_get_buffered_data_len(rs485_drv->uart_port,&buffered_size);
+                            // ESP_LOGW(TAG, "RS485 recive data len:%d",rx_bytes);
+                        }
                     }
 
                 break;

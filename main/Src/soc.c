@@ -3,10 +3,15 @@
 #include "esp_timer.h"
 #include "modbus.h"
 
+#include "uniformzation.h"
+
 static const char *TAG = "PRJ_SOC";
 
 extern const int soc_model_data_len;
 extern const unsigned char soc_model_data[];
+
+extern const int soc1_model_data_len;
+extern const unsigned char soc1_model_data[];
 
 tflm_module_t soc_modle;
 
@@ -15,52 +20,80 @@ float m_soc;
 uint16_t capacity;
 float m_capacity;
 
-#define SOC_OCV_TABLE_SIZE      11
-float soc_ocv_table[2][SOC_OCV_TABLE_SIZE] = {
-    {12.725,12.475,12.375,12.275,12.175,12.075,11.975,11.825,11.675,11.475,10.65},
-    {100,90,80,70,60,50,40,30,20,10,0}
-};
-
-#define SOC_INPUT_WINDOW_TIME           120         //ÊäÈëÊ±¼ä´°£¬µ¥Î»·ÖÖÓ
-#define SOC_INPUT_WINDOW_SPAN             3           //ÊäÈëÊ±¼ä´°ÄÚÊý¾Ý¼ä¸ôÊ±¼ä£¬µ¥Î»·ÖÖÓ    
-#define SOC_INPUT_WINDOW_SIZE           (SOC_INPUT_WINDOW_TIME/SOC_INPUT_WINDOW_SPAN)  //ÊäÈëÊý¾Ý¸öÊý 120/3 = 40
-float *soc_input_window = NULL;
-
-uint16_t soc_input_index = 0;
-uint16_t soc_input_full  = 0;
-
-#define SOC_OUTPUT_SIZE                 2
 #define SOC_INPUT_TYPE_NUM              5
 typedef enum _SOC_INPUT_TYPE
 {
-    SOC_INPUT_CFDZT = 0,    //³ä·Åµç×´Ì¬  
-    SOC_INPUT_VOLTAGE,      //µçÑ¹
-    SOC_INPUT_CFDSJ,        //³ä·ÅµçÊ±¼ä
+    SOC_INPUT_CFDZT = 0,    //å……æ”¾ç”µçŠ¶æ€ 
+    SOC_INPUT_VOLTAGE,      //ç”µåŽ‹
+    SOC_INPUT_CFDSJ,        //å……æ”¾ç”µæ—¶é—´
     SOC_INPUT_SOC,          //SOC
-    SOC_INPUT_DQ,           //ÔöÁ¿ÈÝÁ¿
+    SOC_INPUT_DQ,           //å¢žé‡å®¹é‡
 }SOC_INPUT_TYPE;
-float soc_input_data[SOC_INPUT_TYPE_NUM];
+
+
+#define SOC_INPUT_WINDOW_TIME           120             //è¾“å…¥æ—¶é—´çª—å£
+#define SOC_INPUT_WINDOW_SPAN           3               //è¾“å…¥æ—¶é—´é—´éš”  
+#define SOC_INPUT_WINDOW_SIZE           40              //è¾“å…¥çª—å£æ•°é‡
+float *soc_input_window = NULL;
+
+
+
+#define SOC_OUTPUT_SIZE                 2
+
+float soc_input_data[SOC_INPUT_WINDOW_SIZE][SOC_INPUT_TYPE_NUM];
 float soc_output_data[SOC_OUTPUT_SIZE];
+uint16_t soc_input_index = 0;
+bool soc_input_full  = false;
+
 
 void soc_inference_task_handler(void *parameters)
 {
+    if(!soc_input_full){
+        ESP_LOGW(TAG,"SOC input fifo is not full...  index = %d",(int)soc_input_index);
+        return;
+    }
+    if(soc_modle.interpreter == NULL){
+        ESP_LOGE(TAG,"SOC modle interpreter is not create...");
+        return;
+    }
+    static int64_t max_time;
     int64_t start_time, end_time;
     int64_t elapsed_time_ms;
-    while(1){
-        // è®°å½•å¼€å§‹æ—¶é—? (å¾?ç§?)
-        start_time = esp_timer_get_time();
-        ESP_LOGI(TAG,"SOC modle inference start...");
-        tflm_run(&soc_modle,soc_input_data,SOC_INPUT_WINDOW_SIZE,soc_output_data,SOC_OUTPUT_SIZE);
-        // è®°å½•ç»“æŸæ—¶é—´ (å¾?ç§?)
-        end_time = esp_timer_get_time();
-        // è®¡ç®—è€—æ—¶ (å¾?ç§?)
-        elapsed_time_ms = (end_time - start_time)/1000;
-        ESP_LOGI(TAG,"SOC modle inference finish...,use time = %d ms",(int)elapsed_time_ms);
+    uint64_t row = SOC_INPUT_WINDOW_SIZE;
+    uint64_t column = SOC_INPUT_TYPE_NUM;
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    float *inputWicket = heap_caps_malloc(SOC_INPUT_WINDOW_SIZE*SOC_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    ESP_LOGI(TAG,"SOC modle uniformization start.......");
+    uniformization_interface(soc_input_data,inputWicket,row,column,soc_input_index);
+
+    // è®°å½•å¼€å§‹æ—¶é—´(us)
+    start_time = esp_timer_get_time();
+    ESP_LOGI(TAG,"SOC modle inference start...");
+    tflm_run(&soc_modle,inputWicket,SOC_INPUT_WINDOW_SIZE*SOC_INPUT_TYPE_NUM,soc_output_data,SOC_OUTPUT_SIZE);
+    // è®°å½•ç»“æŸæ—¶é—´(us)
+    end_time = esp_timer_get_time();
+    // è®¡ç®—è€—æ—¶ (ms)
+    elapsed_time_ms = (end_time - start_time)/1000;
+    if(elapsed_time_ms > max_time)  max_time = elapsed_time_ms;
+    ESP_LOGI(TAG,"SOC modle inference finish...,use time = %d ms",(int)elapsed_time_ms);
+    ESP_LOGW(TAG,"SOC modle inference finish...,max use time = %d ms",(int)max_time);
+    for(int i=0;i<soc_modle.result_num;i++){
+        printf("SOC modle inference result[%d]: %f",i,soc_output_data[i]);
     }
+    printf("\r\n");
+    heap_caps_free(inputWicket);
+    // vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
+void soc_input_data_fill(float *data,uint16_t num){
+    memcpy(soc_input_data[soc_input_index],data,num*sizeof(float));
+    soc_input_index++;
+    soc_input_index %= SOC_INPUT_WINDOW_SIZE;
+
+    if(soc_input_index == 0){
+        soc_input_full = true;
+    }else{;}
+}
 
 void soc_modle_init(void)
 {
@@ -68,122 +101,13 @@ void soc_modle_init(void)
 
     soc_modle.interpreter = NULL;
     soc_modle.model_data = soc_model_data;
-    tflm_init();
+
     tflm_create(&soc_modle);
-    // xTaskCreatePinnedToCore(soc_inference_task_handler,"soc_task",1024*4,NULL,7,NULL,1);
+    // xTaskCreatePinnedToCore(soc_inference_task_handler,"soc_task",1024*4,NULL,8,NULL,1);
 }
 
 
-void soc_ocv_estimate(void)
-{
-    uint16_t voltage = 0;
-    modbus_reg_read(0x1003,&voltage,1);
-    float volt = voltage/1000.0;
-    ESP_LOGI(TAG, "battery voltage = %.3f V",volt);
-    int index = 0;
-    for(int i=0;i<SOC_OCV_TABLE_SIZE;i++){
-        index = i;
-        if(volt >= soc_ocv_table[0][i]){
-            if(i == 0 || i == (SOC_OCV_TABLE_SIZE-1)){
-                m_soc = soc_ocv_table[1][i];
-            }else{
-                float k = (soc_ocv_table[1][i-1] - soc_ocv_table[1][i])/(soc_ocv_table[0][i-1] - soc_ocv_table[0][i]);
-                m_soc = soc_ocv_table[1][i] + k*(volt - soc_ocv_table[0][i]);
-            }
-            break;
-        }else{
-            continue;
-        }
-    }
-}
-
-void soc_caculate(void)
-{
-    //soc = soc + dq/dt;
-    uint16_t current = 0;
-    modbus_reg_read(0x1000,&current,1);
-    float curr = current/1000.0;
-
-    m_soc = m_soc + (curr*1.0/3600.0)/capacity;
-    if(m_soc < 0){
-        m_soc = 0;
-    }else if(m_soc > 1){
-        m_soc = 1;
-    }else{;}
-    soc_input_data[SOC_INPUT_SOC] = m_soc;
-}
-
-void uniformization(float *data,uint16_t length)
-{
-
-}
 
 
-void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index)
-{
-    float *max = (float *)heap_caps_calloc(1,SOC_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);       //×î´óÖµ
-    float *min = (float *)heap_caps_calloc(1,SOC_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);       //×îÐ¡Öµ
-    float *diff = (float *)heap_caps_calloc(1,SOC_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);      //×î´ó×îÐ¡Öµ²î
-
-    float (*data_window)[column] = src_window;
-    float (*uniformization_data)[column] = des_window;
-
-    //³õÊ¼»¯×î´ó/×îÐ¡ÖµÊý×é
-    for(int i=0;i<column;i++){
-        max[i] = data_window[0][i];
-        min[i] = data_window[0][i];
-    }
-
-    for(int i=0;i<column;i++){              //°´ÁÐÑ°ÕÒ×î´óÖµ¡¢×îÐ¡Öµ£¬¼ÆËã×î´ó×îÐ¡Öµ²î
-        for(int j=0;j<row;j++){       //°´ÐÐÑ°ÕÒ×î´óÖµ¡¢×îÐ¡Öµ
-            if(data_window[j][i] > max[j]){
-                max[j] = data_window[j][i];
-            }else{;}
-            if(data_window[j][i] < min[j]){
-                min[j] = data_window[j][i];
-            }else{;}
-        }
-        diff[i] = max[i] - min[i];
-    }
-
-    //¹éÒ»´°¿ÚÊý¾Ý°´Ê±¼äÐòÁÐÌî³ä
-    for(int i=0;i<row;i++){
-        uint16_t index_row = 0;
-        if(soc_input_index+i > row)
-        {
-            index_row = row + i - soc_input_index;
-        }
-        else
-        {
-            index_row = soc_input_index + i;
-        }
-
-        for(int j=0;j<column;j++){
-            if(diff[j] != 0){
-                uniformization_data[i][j] = (data_window[index_row][j] - min[j])/diff[j];
-            }else{
-                uniformization_data[i][j] = 0.999;
-            }
-        }
-    }
-
-    heap_caps_free(max);
-    heap_caps_free(min);
-    heap_caps_free(diff);
-}
-
-void soc_input_data_uniformization(void *window,uint64_t size)
-{
-    
-}
-
-void soc_inference(void)
-{
-    uint64_t   window_size = SOC_INPUT_WINDOW_SIZE*SOC_INPUT_TYPE_NUM*sizeof(float);
-    float *uniformization_window = (float *)heap_caps_malloc(window_size,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
-    
-
-
-}
 
 

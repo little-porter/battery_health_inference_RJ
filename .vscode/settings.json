@@ -5,7 +5,7 @@
   // "idf.openOcdConfigs": [
   //   "board/esp32s3-builtin.cfg"
   // ],
-  "idf.portWin": "COM76",
+  "idf.portWin": "COM82",
   "idf.toolsPathWin": "D:\\Espressif\\tools",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -49,7 +49,11 @@
     "ratio": "c",
     "chrono": "c",
     "collect_device.h": "c",
-    "variant": "c"
+    "variant": "c",
+    "project.h": "c",
+    "sys.h": "c",
+    "complex": "c",
+    "uniformzation.h": "c"
   },
   "terminal.integrated.env.windows": {
         "PYTHONIOENCODING": "utf-8"

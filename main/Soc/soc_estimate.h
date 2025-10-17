@@ -6,7 +6,7 @@
 #include "sys.h"
 
 
-
+void soc_init_value_get(void);
 
 
 

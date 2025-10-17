@@ -13,23 +13,25 @@ float ocv_soc_table[OCV_SOC_TABLE_SIZE][2] ={
 
 float ocv_soc_get(float openVoltage)
 {
-    int index;
+    int index = 0;
     float currentSoc;
     for(int i=0;i<OCV_SOC_TABLE_SIZE;i++){
-        index = i;
         if(openVoltage>=ocv_soc_table[i][1]){
             break;
         }
+        index++;
     }
 
     if(index==0){
         currentSoc = ocv_soc_table[index][0];
-    }else if(index==OCV_SOC_TABLE_SIZE){
+    }else if(index == OCV_SOC_TABLE_SIZE){
         currentSoc = ocv_soc_table[index-1][0];
-    }else{
+    }
+    else{
         currentSoc = (openVoltage - ocv_soc_table[index][1])*(ocv_soc_table[index-1][0]-ocv_soc_table[index][0])/(ocv_soc_table[index-1][1]-ocv_soc_table[index][1])+ocv_soc_table[index][0];
     }
 
+    ESP_LOGE("SOC","index:%d",index);
     return currentSoc;
 }
 

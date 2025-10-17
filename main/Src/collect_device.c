@@ -5,24 +5,24 @@
 static const char *TAG = "PRJ_COLLECT";
 
 /************************************************************************************
-*电池信息采集�?件bin文件名称定义
+*电池信息采集软件bin文件名称定义
 ************************************************************************************/
-static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";                 //电池信息采集�?件bin文件�?�?
-static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";     //bin文件缓存�?�?
+static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";                 //电池信息采集软件bin文件存储文件
+static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";     //bin文件缓存文件
 
-#define COLLECT_INFO_OFFSET				0x300                                               //�?件信�?在bin文件�?的偏�?
+#define COLLECT_INFO_OFFSET				0x300                                               //软件信息在bin文件中的偏移
 /************************************************************************************
 *底板串口信息定义
 ************************************************************************************/
 #define COLLECT_UART_PORT     UART_NUM_1                //使用串口1
-#define COLLECT_UART_BAUD     9600                      //串口波特�?(不能大于9600，隔离电�?决定)
+#define COLLECT_UART_BAUD     9600                      //串口波特率(不能大于9600，隔离电路决定)
 #define COLLECT_UART_TX_PIN   GPIO_NUM_43               //GPIO43
 #define COLLECT_UART_RX_PIN   GPIO_NUM_44               //GPIO44
 // #define COLLECT_EN_PIN        GPIO_NUM_45
 QueueHandle_t collect_device_queue = NULL;              //串口事件队列
 
-#define  COLLECT_DEVICE_DATA_SIZE      200              //底板数据帧最大长�?
-#define  COLLECT_DEVICE_FIFO_SIZE      100              //底板数据�?FIFO深度
+#define  COLLECT_DEVICE_DATA_SIZE      200              //底板数据帧最大长度
+#define  COLLECT_DEVICE_FIFO_SIZE      100              //底板数据缓存FIFO深度
 
 typedef struct _collect_data
 {
@@ -35,41 +35,41 @@ typedef struct _collect_fifo
     collect_data_t data[COLLECT_DEVICE_FIFO_SIZE];
     uint16_t pos;
     uint16_t tail;
-}collect_fifo_t;                                       //数据�?FIFO结构�?   
+}collect_fifo_t;                                       //数据缓存FIFO结构体   
 collect_fifo_t collect_rx_fifo;                        //底板数据接收FIFO
 
 /************************************************************************************
-*底板数据帧定�?
+*底板数据帧相关宏定义
 ************************************************************************************/
-#define COLLECT_DEVICE_ADDR                 0x01        //底板设�?�地址
+#define COLLECT_DEVICE_ADDR                 0x01        //底板设备地址
 #define COLLECT_DEVICE_BROADCAST_ADDR       0xFF        //广播地址
-#define COLLECT_DEVICE_FUNC_READ            0x03        //读寄存器功能�?
-#define COLLECT_DEVICE_FUNC_WRITE           0x10        //写寄存器功能�?
-#define COLLECT_DEVICE_ADDR_IDX             0           //设�?�地址索引        
-#define COLLECT_DEVICE_FUNC_IDX             1           //功能码索�?   
-#define REG_NUM_IDX                         2           //寄存器数量索�?
-#define REG_DATA_IDX                        4           //寄存器数�?索引 
+#define COLLECT_DEVICE_FUNC_READ            0x03        //读寄存器功能码
+#define COLLECT_DEVICE_FUNC_WRITE           0x10        //写寄存器功能码
+#define COLLECT_DEVICE_ADDR_IDX             0           //设备地址索引        
+#define COLLECT_DEVICE_FUNC_IDX             1           //功能码索引 
+#define REG_NUM_IDX                         2           //寄存器数量索引
+#define REG_DATA_IDX                        4           //寄存器数据索引 
 
 #define COLLECT_DEVICE_RESPOND_TIME         200         //底板响应时间
 /************************************************************************************
-*modbus寄存器地址宏定�?
+*modbus寄存器地址宏定义
 ************************************************************************************/
-#define REG_COLLECT_VERSION_YEAR    0x3006              //�?件版�?年寄存器
-#define REG_COLLECT_VERSION_MONTH   0x3007              //�?件版�?月寄存器
-#define REG_COLLECT_VERSION_DAY     0x3008              //�?件版�?日寄存器
-#define REG_COLLECT_VERSION_AA      0x3009              //�?件版本AA寄存�?
-#define REG_COLLECT_VERSION_BB      0x300A              //�?件版本BB寄存�?
-#define REG_COLLECT_VERSION_CC      0x300B              //�?件版本CC寄存�?
+#define REG_COLLECT_VERSION_YEAR    0x3006              //软件版本年寄存器
+#define REG_COLLECT_VERSION_MONTH   0x3007              //软件版本月寄存器
+#define REG_COLLECT_VERSION_DAY     0x3008              //软件版本日寄存器
+#define REG_COLLECT_VERSION_AA      0x3009              //软件版本AA寄存器
+#define REG_COLLECT_VERSION_BB      0x300A              //软件版本BB寄存器
+#define REG_COLLECT_VERSION_CC      0x300B              //软件版本CC寄存器
 
 /************************************************************************************
 *采集底板信息
 ************************************************************************************/
 typedef enum _collect_process_t
 {
-    COLLECT_PROCESS_INIT = 0,                           //初�?�化过程
+    COLLECT_PROCESS_INIT = 0,                           //初始化过程
     COLLECT_PROCESS_GET_VERSION,                        //获取版本信息
     COLLECT_PROCESS_READ_DATA,                          //读取数据
-    COLLECT_PROCESS_UPGRADE,                            //�?件升�?
+    COLLECT_PROCESS_UPGRADE,                            //软件升级
     COLLECT_PROCESS_SET_CALIBRATION,
     COLLECT_PROCESS_READ_CALIBRATION ,
     COLLECT_PROCESS_SET_BALANCE,
@@ -85,16 +85,16 @@ typedef struct _version
 {
     uint16_t year,month,day;
     uint16_t aa,bb,cc;
-}version_t;                                             //�?件版�?结构�?  
+}version_t;                                             //软件版本结构体  
 
-version_t collect_version;                              //采集底板�?件版�?
+version_t collect_version;                              //采集底板软件版本
 
 typedef enum _collect_upgrade_flag
 {
     COLLECT_UPGRADE_FLAG_START = 0,
     COLLECT_UPGRADING,
     COLLECT_UPGRADE_FLAG_END,
-}collect_upgrade_flag_t;                                //采集底板�?件升级过程标�?
+}collect_upgrade_flag_t;                                //采集底板软件升级过程标志
 
 
 typedef struct _iap_msg
@@ -106,9 +106,9 @@ typedef struct _iap_msg
     uint16_t frm_num;
     uint16_t data_len;
     uint8_t payload[0];
-}iap_msg_t;                                             //采集底板iap消息结构�?       
+}iap_msg_t;                                             //采集底板iap消息结构体      
 
-#define  collect_data_reverse(pdata,num)      modbus_reg_data_reverse(pdata,num)    //数据反转宏定�?
+#define  collect_data_reverse(pdata,num)      modbus_reg_data_reverse(pdata,num)    //数据反转宏定义
 
 typedef struct _collect_device
 {
@@ -118,9 +118,9 @@ typedef struct _collect_device
     uint16_t capacity;
     uint16_t balance;
     uint16_t upgrade_flag;
-}collect_device_t;                                              //采集底板设�?�结构体  
+}collect_device_t;                                              //采集底板设备数据结构体  
 
-collect_process_t collect_process = COLLECT_PROCESS_INIT;       //采集底板交互状�?
+collect_process_t collect_process = COLLECT_PROCESS_INIT;       //采集底板交互状态
 
 #define  CALIBRATE_TABLE_VOLTAGE_ADDR   0
 #define  CALIBRATE_TABLE_CO_ADDR        4
@@ -128,15 +128,26 @@ collect_process_t collect_process = COLLECT_PROCESS_INIT;       //采集底板�
 #define  CALIBRATE_TABLE_BATTERY_TEMP_ADDR   28
 #define  CALIBRATE_TABLE_ENV_TEMP_ADDR       32
 #define  CALIBRATE_TABLE_ENC_HUMIDITY_ADDR   36   
-#define  CALIBRATE_TABLE_LEN        50                          //校准表长�?
+#define  CALIBRATE_TABLE_LEN        50                          //校准表长度
 #define  MAP_TABLE_CO_ADDR          48
 #define  MAP_TABLE_H2_ADDR          4
 #define  MAP_TABLE_ZERO_ADDR        0
 #define  MAP_TABLE_LEN              100
-uint16_t collect_calibrate_table[CALIBRATE_TABLE_LEN];          //校准�?
+uint16_t collect_calibrate_table[CALIBRATE_TABLE_LEN];          //校准表
 
 uint16_t collect_map[MAP_TABLE_LEN];
-collect_device_t collect_device;                                //采集底板设�??
+collect_device_t collect_device;                                //采集底板设备
+bool colDevOnlineStatus = false;                                //采集底板在线标志
+uint16_t colDevKeepOnlineTime = 0;                             //采集底板离线时间(单位:秒)
+
+
+bool collect_device_online_status_get(void)
+{
+    return colDevOnlineStatus;
+}
+
+
+
 /************************************************************************************
 *采集底板接收fifo相关函数定义
 ************************************************************************************/
@@ -407,7 +418,9 @@ void collect_device_read_reg_respond_anlysis(uint16_t reg_addr,uint16_t reg_num,
         modbus_reg_write_no_reverse(reg_addr,data,reg_num);
         memcpy(&collect_map[reg_addr-0x4029],data,reg_num*2);
     }else if(reg_addr>=0x1000 && reg_addr<0x2000){
-        ESP_LOGI(TAG, "collect device read data success");
+        ESP_LOGI(TAG, "collect device read data success");                                      //复位底板在线时间
+        colDevOnlineStatus = true;
+        colDevKeepOnlineTime = 10;
         modbus_reg_write_no_reverse(reg_addr,data,reg_num);
         // memcpy(collect_calibrate_table,data,reg_num*2);
     }else if(reg_addr>=0x2000 && reg_addr<0x3000){
@@ -630,9 +643,9 @@ void collect_device_h2_map_check(void)
     
 void collect_device_current_data_updata(void)
 {
-    uint16_t current = 0;
-    modbus_reg_read_no_reverse(0x001E,&current,1);
-    modbus_reg_write_no_reverse(0x1000,&current,1);
+    int16_t current = 0;
+    modbus_reg_read_no_reverse(0x001E,(uint16_t *)&current,1);
+    modbus_reg_write_no_reverse(0x1000,(uint16_t *)&current,1);
     collect_device_balance_check();
     collect_device_voltage_calibration_check();
     collect_device_co_calibration_check();
@@ -889,6 +902,15 @@ void collect_device_event_handler(void)
     else{;}
 }
 
+void collect_device_offline_check(void)
+{
+    if(colDevKeepOnlineTime > 0){           //保持在线时间自减
+        colDevKeepOnlineTime--;
+    }else{                                  //保持在线时间为零，判定为离线
+        colDevOnlineStatus = false;
+        ESP_LOGE(TAG,"[collect_device] Device Offline\r\n");
+    }
+}
 
 void collect_send_task_handler(void *pvParameters)
 {
@@ -897,6 +919,11 @@ void collect_send_task_handler(void *pvParameters)
     while(1){
         cnt++;
         cnt %= 20;
+        if(cnt == 0){
+            collect_device_offline_check();
+        }
+       
+
         collect_device_event_handler();
         switch (collect_process){
         case COLLECT_PROCESS_INIT:

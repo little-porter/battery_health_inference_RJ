@@ -61,6 +61,8 @@ void soc_init_value_get(void)
     g_socValue = ocv_soc_get(voltage);
     g_capacity = capacity;
    
+    ESP_LOGE("SOC","ocvVoltage:%d,voltage:%.3f,soc:%.2f,capacity:%d",ocvVoltage,voltage,g_socValue,capacity);
+
     uint16_t soc_real = (uint16_t)(g_socValue*100);
     modbus_reg_write(SOC_REAL_REG,&soc_real,1);
 }

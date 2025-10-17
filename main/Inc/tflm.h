@@ -10,11 +10,11 @@ extern "C" {
 typedef struct _tflm_module
 {
     /* data */
-    void *interpreter;                          //解释�?
+    void *interpreter;                          //解释器
     const unsigned char *model_data;            //模型数据
-    uint32_t input_row;                         //输入�?    
-    uint32_t input_col;                         //输入�?
-    uint32_t result_num; 
+    uint32_t input_row;                         //输入行数  
+    uint32_t input_col;                         //输入列数
+    uint32_t result_num;                        //结果数量   
 }tflm_module_t;
 
 

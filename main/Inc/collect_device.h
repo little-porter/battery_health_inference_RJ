@@ -10,8 +10,8 @@
 #include "driver/uart.h"
 
 
-
-
+/*获取设备在线状态*/
+bool collect_device_online_status_get(void);
 
 void collect_device_init(void);
 

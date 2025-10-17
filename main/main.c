@@ -13,7 +13,13 @@
 
 #include "net_config.h"
 
+#include "tflm.h"
 #include "soc.h"
+#include "interSOH.h"
+#include "rsk.h"
+
+#include "soc_estimate.h"
+#include "battery_data.h"
 
 static const char *TAG = "PRJ_MAIN";
 
@@ -32,27 +38,36 @@ void collect_device_power_on(void)
 
 void app_main(void)
 {
+    littlefs_ops_init();
+    net_config_init();
+
     modbus_generate_crcTable();
+
     sysEvent_init();
 
-    littlefs_ops_init();
+    
     ota_init();
     iap_init();
     rs485_driver_init(&rs485_driver);
     led_init();
-    net_config_init();
+    
     collect_device_power_on();
     collect_device_init();
 
-    
+    //模型相关
+    tflm_init();
     soc_modle_init();
+    soh_modle_init();
+    // rsk_modle_init();
+    battery_data_init();
 
     while (1)
     {
         /* code */
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
         littlefs_ops_read_file_info();
         ESP_LOGI(TAG,"sys running...");
+        // soc_init_value_get();
     }
     
 }
