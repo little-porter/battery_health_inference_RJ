@@ -1,7 +1,7 @@
 #ifndef __IAP_H__
 #define __IAP_H__
 
-#include "sysEvent.h"
+#include "sys.h"
 
 void iap_msg_deal_handler(uint8_t *data,uint16_t length);
 

@@ -4,8 +4,8 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_SRC_DIRS "." "./Src" "./model" "./Soc" "./Soh" "./Rsk")
-set(PROJECT_INC_DIRS "." "./Inc" "./Soc" "./Soh" "./Rsk")
+set(PROJECT_SRC_DIRS "." "./Src" "./model/modelData" "./model/Soc" "./model/Soh" "./model/Rsk" "./alarm" "./ModelVerify" "./Config" "./tflm")
+set(PROJECT_INC_DIRS "." "./Inc" "./model/Soc" "./model/Soh" "./model/Rsk" "./alarm" "./ModelVerify" "./Config" "./tflm")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 

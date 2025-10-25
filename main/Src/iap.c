@@ -1,13 +1,12 @@
 #include "iap.h"
 #include "string.h"
 #include "modbus.h"
-#include "sysEvent.h"
 
 static const char *TAG = "PRJ_IAP";
 
 static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";
 static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";
-const char *app_name = "电池信息采集软件";
+const char *app_name = "batteryInfoCollectSoftware";
 
 #define FACTORY_APP		0
 #define IAP_APP			1
@@ -104,6 +103,8 @@ iap_info_t iap_info;
 #define  IAP_TIMEOUT		10
 uint16_t   iap_delay_time = IAP_TIMEOUT;					//IAP锟斤拷锟教筹拷时时锟斤拷
 uint8_t    app_is_executable = 0;
+
+bool iapBinFileUpdate = true;
 
 #define IAP_INFO_OFFSET		0x300
 
@@ -503,7 +504,7 @@ void iap_upgrade_process(void *param)
 		case IAP_PROCESS_FINISH:
 			if(iap_bin_crc()){
 				iap_app_update();
-				sysEvent_set(collect_dev_event_group,COLLECT_DEV_UPGRADE_EVENT_BIT);
+				iapBinFileUpdate = true;
 				iap_get_bin_version(&iap_info.run_app_version);
 				ESP_LOGI(TAG, "iap upgrade success,error code is:%d",iap_info.iap_status);
 			}else{

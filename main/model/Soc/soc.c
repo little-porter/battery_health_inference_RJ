@@ -13,6 +13,8 @@ extern const unsigned char soc_model_data[];
 extern const int soc1_model_data_len;
 extern const unsigned char soc1_model_data[];
 
+extern const unsigned char model_data[];
+
 tflm_module_t soc_modle;
 
 
@@ -45,6 +47,11 @@ float soc_output_data[SOC_OUTPUT_SIZE];
 uint16_t soc_input_index = 0;
 bool soc_input_full  = false;
 
+bool socPredFlag = false;
+
+
+#define SOC_PREDICTION_1H_REG        0x2001
+#define SOC_PREDICTION_2H_REG        0x2002
 
 void soc_inference_task_handler(void *parameters)
 {
@@ -63,9 +70,22 @@ void soc_inference_task_handler(void *parameters)
     uint64_t column = SOC_INPUT_TYPE_NUM;
 
     float *inputWicket = heap_caps_malloc(SOC_INPUT_WINDOW_SIZE*SOC_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    // for(int i=0;i<SOC_INPUT_WINDOW_SIZE;i++){
+    //     printf("soc_input_data[%d]",i);
+    //     for(int j=0;j<SOC_INPUT_TYPE_NUM;j++){
+    //         printf(" %f",soc_input_data[i][j]);
+    //     }
+    //     printf("\r\n");
+    // }
     ESP_LOGI(TAG,"SOC modle uniformization start.......");
-    uniformization_interface(soc_input_data,inputWicket,row,column,soc_input_index);
-
+    uniformization_interface(soc_input_data,inputWicket,row,column,soc_input_index,1<<3);
+    for(int i=0;i<SOC_INPUT_WINDOW_SIZE;i++){
+        printf("inputWicket[%d]",i);
+        for(int j=0;j<SOC_INPUT_TYPE_NUM;j++){
+            printf(" %f",inputWicket[i*column+j]);
+        }
+        printf("\r\n");
+    }
     // 记录开始时间(us)
     start_time = esp_timer_get_time();
     ESP_LOGI(TAG,"SOC modle inference start...");
@@ -80,9 +100,19 @@ void soc_inference_task_handler(void *parameters)
     for(int i=0;i<soc_modle.result_num;i++){
         printf("SOC modle inference result[%d]: %f",i,soc_output_data[i]);
     }
+    // uint16_t soc_1h = soc_output_data[0]*10000;
+    // uint16_t soc_2h = soc_output_data[1]*10000;
+    // modbus_reg_write(SOC_PREDICTION_1H_REG,(uint16_t *)&soc_1h,1);
+    // modbus_reg_write(SOC_PREDICTION_2H_REG,(uint16_t *)&soc_2h,1);
+    socPredFlag = true;
+
     printf("\r\n");
     heap_caps_free(inputWicket);
     // vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+float *soc_prediction_result_get(void){
+    return soc_output_data;
 }
 
 void soc_input_data_fill(float *data,uint16_t num){
@@ -100,7 +130,7 @@ void soc_modle_init(void)
     modbus_reg_read(0x0003,&capacity,1);
 
     soc_modle.interpreter = NULL;
-    soc_modle.model_data = soc_model_data;
+    soc_modle.model_data = model_data;
 
     tflm_create(&soc_modle);
     // xTaskCreatePinnedToCore(soc_inference_task_handler,"soc_task",1024*4,NULL,8,NULL,1);

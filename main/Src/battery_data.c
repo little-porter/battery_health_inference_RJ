@@ -5,7 +5,7 @@
 #include "esp_timer.h"
 #include <math.h>
 #include "soc.h"
-#include "interSOH.h"
+#include "soh.h"
 
 static char *TAG = "PRJ_BatteryData";
 
@@ -17,8 +17,11 @@ static char *TAG = "PRJ_BatteryData";
 
 // #define BATTERY_TEMP_REG      0x1005
 
-#define BATTERY_SOC_REG       0x2000
-#define BATTERY_SOH_REG       0x2003
+#define BATTERY_SOC_REG         0x2000
+#define BATTERY_SOC_PRED_1H_REG 0x2001
+#define BATTERY_SOH_PRED_1H_REG 0x2002
+#define BATTERY_SOH_REG         0x2003
+#define BATTERY_SOH_PRED_1L_REG 0x2004
 
 #define BATTERY_STATIC_VALUE   0.05
 
@@ -28,6 +31,9 @@ bool batteryValidFlag = false;      //电池数据有效标志
 float batterySOC = 0;               //电池SOC
 float batteryVoltage = 0;
 float batteryCap = 2;
+
+float socPred_1h = 0, socPred_2h = 0;
+
 
 typedef struct _battery_data{
     float current;
@@ -50,8 +56,8 @@ void battery_data_soc_initValue_get(void){
     int16_t ocvVoltage = 0;
     float voltage = 0;
     modbus_reg_read(BATTERY_VOLTAGE_REG,(uint16_t *)&ocvVoltage,1);
-    voltage = fabsf(ocvVoltage)*1.0/1000;
-    batteryData.soc = ocv_soc_get(voltage);
+    voltage = (ocvVoltage)*1.0/1000;
+    batteryData.soc = ocv_soc_get(fabsf(voltage));
 
     ESP_LOGE("SOC","voltage:%.3f,batterySOC:%.3f",voltage,batteryData.soc);
 }
@@ -80,6 +86,12 @@ void battery_data_chargeTime_get(void){
     ESP_LOGE(TAG,"状态:%f,chargeTime:%.3f",batteryData.chargeStatus,batteryData.chargeTime);
 }
 
+void battery_current_update(void){
+    int16_t current = 0;
+    modbus_reg_read_no_reverse(0x001E,(uint16_t *)&current,1);
+    modbus_reg_write_no_reverse(BATTERY_CURRENT_REG,(uint16_t *)&current,1);
+}
+
 void battery_data_get(void){
     uint16_t newData[6] = {0};
     int16_t *pData = (int16_t *)newData;
@@ -103,7 +115,6 @@ void battery_data_get(void){
 
     battery_data_chargeTime_get();
 }
-
 
 void battery_data_soc_calibrate(void){
     //1、静止OCV校准
@@ -169,7 +180,6 @@ void battery_data_soc_calculate(void){
     
     if(fabsf(batteryData.current) > BATTERY_STATIC_VALUE){           //电流大于0.01A才进行SOC计算
         batteryData.soc += (100*dq/batteryCap);                      //SOC计算
-
     }
 
     if(batteryData.soc > 100)   batteryData.soc = 100;
@@ -178,7 +188,7 @@ void battery_data_soc_calculate(void){
 }
 
 void battery_data_soc_prediction(void){
-    float socPred_1h = 0, socPred_2h = 0;
+    // float socPred_1h = 0, socPred_2h = 0;
     float chargeFinishTime = 0;
 
     if(batteryData.chargeStatus == 0){
@@ -207,7 +217,7 @@ void battery_data_soh_calculate(void){
     static float dq = 0;
     static uint32_t index = 0;
     static int64_t lastTime = 0,currentTime = 0,spanTime = 0;
-    if(batteryData.chargeStatus != 1){
+    if(batteryData.chargeStatus == 2){
         lastVoltage = 0;
         index = 0;
         dq = 0;
@@ -243,6 +253,28 @@ void battery_data_write_result(void){
     modbus_reg_write(BATTERY_SOC_REG,(uint16_t *)&soc,1);
     uint16_t soh = batteryData.soh*100;
     modbus_reg_write(BATTERY_SOH_REG,(uint16_t *)&soh,1);
+
+    uint16_t socPredResult[2] = {0};
+    if(socPredFlag){
+        float *socPred = soc_prediction_result_get();
+        socPredResult[0] = socPred[0]*10000;
+        socPredResult[1] = socPred[1]*10000;
+        modbus_reg_write(BATTERY_SOC_PRED_1H_REG,(uint16_t *)socPredResult,2);
+    }else{
+        socPredResult[0] = socPred_1h*100;
+        socPredResult[1] = socPred_2h*100;
+        modbus_reg_write(BATTERY_SOC_PRED_1H_REG,(uint16_t *)socPredResult,2);
+    }
+    uint16_t sohPredResult = 0;
+    if(sohPredFlag){
+        float *sohPred = soh_prediction_result_get();
+        sohPredResult = sohPred[0]*10000;
+        modbus_reg_write(BATTERY_SOH_PRED_1L_REG,(uint16_t *)&sohPredResult,1);
+    }else{
+        float sohPred = (batteryData.soh*3000-1)/3000;
+        sohPredResult = sohPred*100;
+        modbus_reg_write(BATTERY_SOH_PRED_1L_REG,(uint16_t *)&sohPredResult,1);
+    }
 }
 
 void battery_data_get_task_handler(void *pvParameters){
@@ -250,14 +282,16 @@ void battery_data_get_task_handler(void *pvParameters){
     
     while(1){
         vTaskDelay(pdMS_TO_TICKS(1000));
+
+        //变送器电更新
+        battery_current_update();
+
+        //采集底板离线检测
         if(collect_device_online_status_get() != true){
             offlineTime++;
             continue;
         }
     
-        
-
-
         //获取新数据
         battery_data_get();
 
@@ -278,13 +312,15 @@ void battery_data_get_task_handler(void *pvParameters){
 
         //模型数据输入
         if(runTime == 0){
-            float socInput[5] = {batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc,batteryData.chargeStatus};
+            float socInput[5] = {batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc/100,batteryData.incrementCap};
             soc_input_data_fill(socInput,5);
             batteryValidFlag = true; 
+            ESP_LOGW(TAG,"socInput chargeStatus:%f, voltage:%.3f, chargeTime:%.3f, soc:%.3f, incrementCap:%f",
+                batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc/100,batteryData.incrementCap);
         }
 
         runTime++,runTime %= 180;
-                       //将数据有效标志位置位，用于模型输入 
+        //将数据有效标志位置位，用于模型输入 
     }   
 }
 
@@ -307,7 +343,7 @@ void battery_data_init(void){
         vTaskDelay(pdMS_TO_TICKS(1000));
     } 
     
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    // vTaskDelay(pdMS_TO_TICKS(10000));
     //获取初始状态SOC
     battery_data_soc_initValue_get();
 

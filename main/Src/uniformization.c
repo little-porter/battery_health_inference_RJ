@@ -5,7 +5,7 @@
 static char *TAG = "uniformization";
 
 
-void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index)
+void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index,uint32_t uniformizationFlag)
 {
     float *max = (float *)heap_caps_calloc(1,column*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);       //最大值
     float *min = (float *)heap_caps_calloc(1,column*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);       //最小值
@@ -17,7 +17,7 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
     if((NULL == data_window) || (des_window == NULL) || (max == NULL) || (min == NULL) || (diff == NULL)){
         ESP_LOGE(TAG,"malloc error");
     }
-
+    // printf("row = %d,column = %d,now_index = %d\n",(int)row,(int)column,(int)now_index);
 
     //初始化最大值、最小值
     for(int i=0;i<column;i++){
@@ -35,26 +35,35 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
             }else{;}
         }
         diff[i] = max[i] - min[i];
+        // printf("max[%d] = %f,min[%d] = %f,diff[%d] = %f\n",i,max[i],i,min[i],i,diff[i]);
+        printf("\r\n");
     }
 
     //进行数据归一化
     for(int i=0;i<row;i++){
         uint16_t index_row = 0;
-        if(now_index+i > row)
-        {
-            index_row = row + i - now_index;
-        }
-        else
-        {
+        if(now_index+i >= row){
+            index_row =  i + now_index - row;
+        }else{
             index_row = now_index + i;
         }
 
         for(int j=0;j<column;j++){
-            if(diff[j] != 0){
-                uniformization_data[i][j] = (data_window[index_row][j] - min[j])/diff[j];
+            if(uniformizationFlag&(1<<j)){
+                uniformization_data[i][j] = data_window[index_row][j];
+                // printf("uniformizationFlag = %d, result = %d\r\n",(int)uniformizationFlag,(int)uniformizationFlag&(1<<j));
+                // printf("uniformization_data[%d][%d] = %f\r\n",i,j,uniformization_data[i][j]);
             }else{
-                uniformization_data[i][j] = 0.999;
+               if(diff[j] != 0){
+                    uniformization_data[i][j] = (data_window[index_row][j] - min[j])/diff[j];
+                }else{
+                    uniformization_data[i][j] = 0;
+                }
             }
+            
+            // if(i == row-1){
+            //     printf("uniformization_data[%d][%d] = %f, data_window[%d][%d] = %f\r\n",i,j,uniformization_data[i][j],index_row,j,data_window[index_row][j]);
+            // }
         }
     }
 

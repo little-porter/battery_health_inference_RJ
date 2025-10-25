@@ -1,8 +1,8 @@
-#include "interSOH.h"
+#include "soh.h"
 
 #include "tflm.h"
 #include "esp_timer.h"
-
+#include "modbus.h"
 #include "uniformzation.h"
 
 static const char *TAG = "PRJ_SOH";
@@ -21,7 +21,7 @@ typedef enum _soh_input_type
 
 
 #define SOH_INPUT_TYPE_NUM              6
-#define SOH_INPUT_WINDOW_SIZE           240
+#define SOH_INPUT_WINDOW_SIZE           24
 #define SOH_OUTPUT_SIZE                 10
 
 float soh_input_data[SOH_INPUT_WINDOW_SIZE][SOH_INPUT_TYPE_NUM];
@@ -38,6 +38,10 @@ extern const unsigned char soh1_model_data[];
 extern const int soh4_model_data_len;
 extern const unsigned char soh4_model_data[];
 
+bool sohPredFlag = false;
+
+#define SOH_PREDICTION_1L_REG        0x2004
+
 void soh_inference_task_handler(void *parameters)
 {
     if(!soh_input_full){
@@ -53,7 +57,7 @@ void soh_inference_task_handler(void *parameters)
     int64_t elapsed_time_ms;
    
     float *inputWicket = heap_caps_malloc(SOH_INPUT_WINDOW_SIZE*SOH_INPUT_TYPE_NUM*sizeof(float),MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
-    uniformization_interface(soh_input_data,inputWicket,SOH_INPUT_WINDOW_SIZE,SOH_INPUT_TYPE_NUM,soh_input_index);
+    uniformization_interface(soh_input_data,inputWicket,SOH_INPUT_WINDOW_SIZE,SOH_INPUT_TYPE_NUM,soh_input_index,1<<0);
 
     //获取开始时间 (微秒)
     start_time = esp_timer_get_time();
@@ -68,8 +72,11 @@ void soh_inference_task_handler(void *parameters)
     ESP_LOGW(TAG,"SOH modle inference finish...,max use time = %d ms",(int)max_time);
 
     for(int i=0;i<soh_modle.result_num;i++){
-        printf("SOC modle inference result[%d]: %f",i,soh_output_data[i]);
+        printf("SOH modle inference result[%d]: %f",i,soh_output_data[i]);
     }
+    uint16_t soh_1l = soh_output_data[0]*10000;
+    modbus_reg_write(SOH_PREDICTION_1L_REG,(uint16_t *)&soh_1l,1);
+
     printf("\r\n");
     heap_caps_free(inputWicket);
     // vTaskDelay(pdMS_TO_TICKS(1000));
@@ -81,10 +88,15 @@ void soh_input_data_fill(float *data,uint16_t num,uint32_t index){
     // soh_input_index++;
     // soh_input_index %= SOH_INPUT_WINDOW_SIZE;
 
-    if(index >= SOH_INPUT_WINDOW_SIZE){
+    if(index >= SOH_INPUT_WINDOW_SIZE-1){
         soh_input_full = true;
     }else{;}
 }
+
+float *soh_prediction_result_get(void){
+    return soh_output_data;
+}
+
 void soh_modle_init(void)
 {
 

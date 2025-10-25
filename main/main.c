@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "sys.h"
-#include "sysEvent.h"
+
 #include "project.h"
 #include "littlefs_ops.h"
 
@@ -11,15 +11,19 @@
 #include "led.h"
 #include "collect_device.h"
 
-#include "net_config.h"
+#include "devConfig.h"
+#include "alarm.h"
 
 #include "tflm.h"
 #include "soc.h"
-#include "interSOH.h"
+#include "soh.h"
 #include "rsk.h"
 
-#include "soc_estimate.h"
 #include "battery_data.h"
+#include "configJson.h"
+
+#include "socModelVerify.h"
+#include "rskModelVerify.h"
 
 static const char *TAG = "PRJ_MAIN";
 
@@ -38,12 +42,14 @@ void collect_device_power_on(void)
 
 void app_main(void)
 {
+    collect_device_power_on();
+
     littlefs_ops_init();
-    net_config_init();
+    devConfig_init();
 
     modbus_generate_crcTable();
 
-    sysEvent_init();
+    // sysEvent_init();
 
     
     ota_init();
@@ -51,15 +57,20 @@ void app_main(void)
     rs485_driver_init(&rs485_driver);
     led_init();
     
-    collect_device_power_on();
+    
     collect_device_init();
 
     //模型相关
     tflm_init();
     soc_modle_init();
-    soh_modle_init();
+    // soh_modle_init();
     // rsk_modle_init();
     battery_data_init();
+
+    // socModelVerify_init();
+    // rskModelVerify_init();
+    // alarm_init();
+    configJson_init();
 
     while (1)
     {

@@ -2,9 +2,8 @@
 #include "ota.h"
 #include "iap.h"
 #include "sys.h"
-#include "sysEvent.h"
 
-#include "net_config.h"
+#include "devConfig.h"
 
 /*private 文件内部私有*/
 #define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优�?)
@@ -16,6 +15,7 @@ uint16_t data_reg_table[REG_TABLE_LEN];
 uint16_t result_reg_table[REG_TABLE_LEN];
 uint16_t info_reg_table[REG_TABLE_LEN];
 uint16_t calibration_reg_table[REG_TABLE_LEN];
+uint16_t fault_reg_table[REG_TABLE_LEN];
 
 #define  MODBUS_ADDR_IDX        0
 #define  MODBUS_FUNCODE_IDX     1
@@ -52,9 +52,9 @@ void modbus_generate_crcTable(void) {
     }
 
     // config_reg_table[MODBUS_ADDR_IDX] = modbus_addr<<8;
-    if(config_reg_table[MODBUS_ADDR_IDX]){
+    // if(config_reg_table[MODBUS_ADDR_IDX]){
         modbus_addr = config_reg_table[MODBUS_ADDR_IDX]>>8;
-    }
+    // }
     
 }
 
@@ -106,6 +106,8 @@ void modbus_reg_write(uint16_t addr,uint16_t *data,uint16_t num)
         write_reg = &info_reg_table[addr-0x3000];
     }else if(addr<0x5000){
 		write_reg = &calibration_reg_table[addr-0x4000];
+	}else if(addr<0x6000){
+		write_reg = &fault_reg_table[addr-0x5000];
 	}else{
         /* 非法地址 */
         return;
@@ -128,6 +130,8 @@ void modbus_reg_write_no_reverse(uint16_t addr,uint16_t *data,uint16_t num)
         write_reg = &info_reg_table[addr-0x3000];
     }else if(addr<0x5000){
 		write_reg = &calibration_reg_table[addr-0x4000];
+	}else if(addr<0x6000){
+		write_reg = &fault_reg_table[addr-0x5000];
 	}else{
         /* 非法地址 */
         return;
@@ -150,6 +154,8 @@ void modbus_reg_read(uint16_t addr,uint16_t *data,uint16_t num)
         read_reg = &info_reg_table[addr-0x3000];
     }else if(addr<0x5000){
 		read_reg = &calibration_reg_table[addr-0x4000];
+	}else if(addr<0x6000){
+		read_reg = &fault_reg_table[addr-0x5000];
 	}else{
         /* 非法地址 */
         return;
@@ -175,6 +181,8 @@ void modbus_reg_read_no_reverse(uint16_t addr,uint16_t *data,uint16_t num)
         read_reg = &info_reg_table[addr-0x3000];
     }else if(addr<0x5000){
 		read_reg = &calibration_reg_table[addr-0x4000];
+	}else if(addr<0x6000){
+		read_reg = &fault_reg_table[addr-0x5000];
 	}else{
         /* 非法地址 */
         return;
@@ -188,7 +196,7 @@ void modbus_error_ask(uint8_t cmd,uint8_t error_code)
 {
     uint8_t error_msg[256] = {0};
     uint16_t pos = 0,cal_crc = 0;
-    error_msg[pos++] = modbus_addr;
+    error_msg[pos++] = config_reg_table[MODBUS_ADDR_IDX]>>8;
     error_msg[pos++] = cmd+0x80;
     error_msg[pos++] = error_code;
     cal_crc = modbus_calculate_crc(error_msg,pos+1);
@@ -221,12 +229,14 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
         ack_reg = &info_reg_table[addr-0x3000];
     }else if(addr<0x5000){
 		ack_reg = &calibration_reg_table[addr-0x4000];
+	}else if(addr<0x6000){
+		ack_reg = &fault_reg_table[addr-0x5000];
 	}else{
         /* 非法地址 */
         modbus_error_ask(cmd,0x02);
         return;
     }
-    ack_msg[pos++] = modbus_addr;
+    ack_msg[pos++] = config_reg_table[MODBUS_ADDR_IDX]>>8;
     ack_msg[pos++] = cmd;
     ack_msg[pos++] = num*2>>8;
     ack_msg[pos++] = num*2&0xFF;
@@ -254,7 +264,6 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     if(addr<0x1000){
         ack_reg = &config_reg_table[addr];
-        sysEvent_set(sys_cfg_event_group,SYS_CFG_SAVE_EVENT_BIT);        //发送保存系统参数事�?
     }else if(addr<0x5000 && addr>=0x4000){
 		ack_reg = &calibration_reg_table[addr-0x4000];
 	}else{
@@ -279,7 +288,7 @@ void modbus_write_ack(uint8_t cmd, uint16_t addr,uint16_t num,uint8_t *data)
 
     memcpy(ack_reg,&data[REG_DATA_IDX],num*2);
 
-    ack_msg[pos++] = modbus_addr;
+    ack_msg[pos++] = config_reg_table[MODBUS_ADDR_IDX]>>8;
     ack_msg[pos++] = cmd;
     ack_msg[pos++] = addr>>8;
     ack_msg[pos++] = addr&0xFF;
@@ -306,7 +315,7 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
     uint16_t crc=0,cal_crc=0;
     if(length < 4) return;
     uint8_t modbusAddr = data[MODBUS_ADDR_IDX];
-    if((modbusAddr != device_cfg.modbus_addr) && (modbusAddr != broadcast_addr)) return;
+    if((modbusAddr != devCfg.modbusAddr) && (modbusAddr != broadcast_addr)) return;
     crc = data[length-2] | data[length-1]<<8;
     cal_crc = modbus_calculate_crc(data,length-2);
     if(crc != cal_crc) return;
@@ -332,7 +341,7 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
         }else if(data[2] == 0x02){
             iap_msg_deal_handler(data,length);
         }else if(data[2] == 0xff){
-            // config_msg_deal_handler(data,length);
+            config_msg_deal_handler(data,length);
         }else{;}
         
         // ESP_LOGI("OTA", "OTA recive data");

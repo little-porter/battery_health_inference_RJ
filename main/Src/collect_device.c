@@ -1,6 +1,5 @@
 #include "collect_device.h"
 #include "modbus.h"
-#include "sysEvent.h"
 
 static const char *TAG = "PRJ_COLLECT";
 
@@ -72,13 +71,6 @@ typedef enum _collect_process_t
     COLLECT_PROCESS_UPGRADE,                            //软件升级
     COLLECT_PROCESS_SET_CALIBRATION,
     COLLECT_PROCESS_READ_CALIBRATION ,
-    COLLECT_PROCESS_SET_BALANCE,
-    COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION,
-    COLLECT_PROCESS_SET_CO_CALIBRATION,
-    COLLECT_PROCESS_SET_H2_CALIBRATION,
-    COLLECT_PROCESS_SET_BATTERY_TEMP_CALIBRATION,
-    COLLECT_PROCESS_SET_ENV_INFO_CALIBRATION,
-    COLLECT_PROCESS_SET_H2_MAP,
 }collect_process_t;                                     //采集底板信息交互过程    
 
 typedef struct _version
@@ -141,6 +133,8 @@ bool colDevOnlineStatus = false;                                //采集底板�
 uint16_t colDevKeepOnlineTime = 0;                             //采集底板离线时间(单位:秒)
 
 
+extern bool iapBinFileUpdate;
+
 bool collect_device_online_status_get(void)
 {
     return colDevOnlineStatus;
@@ -200,7 +194,7 @@ uint16_t collect_device_pull_data_from_rx_fifo(uint8_t *data,uint16_t max_len)
     return read_size;
 }
 /************************************************************************************
-*采集底板�?件升级相关函数定�?
+*采集底板软件升级相关函数定义
 ************************************************************************************/
 void collect_device_read_upgrade_flag(void)
 {
@@ -285,10 +279,11 @@ void collect_device_upgrade(void)
         ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
         goto OPEN_FAIL;
     }
-    fseek(file, 0L, SEEK_END);          // 将文件指针移动到文件�?�?
+    fseek(file, 0L, SEEK_END);          // 将文件指针移动到文件尾部
     size_t bin_size = ftell(file);      // 获取文件大小
-    rewind(file);                       // 将文件指针移动到文件开�?
+    rewind(file);                       // 将文件指针移动到文件开头
     if(bin_size == 0){
+        fclose(file);
         goto OPEN_FAIL;
     }else{;}
 
@@ -303,7 +298,7 @@ void collect_device_upgrade(void)
     vTaskDelay(pdMS_TO_TICKS(300));
     ESP_LOGI(TAG, "total File size: %d bytes", bin_size);
     
-    //发送升级数�?
+    //发送升级数据
     while((bytes_read = fread(data, 1, 1024, file)) > 0){
         collect_device_upgrade_data_send((const char*)data,bytes_read,frm_num++,COLLECT_UPGRADING);
         cal_crc = modbus_calculate_crc_ota(cal_crc,data,bytes_read);
@@ -325,6 +320,7 @@ OPEN_FAIL:
 }
 
 
+
 void collect_device_bin_soft_version_get(void)
 {
     FILE* file = fopen(collect_bin_file, "rb");
@@ -344,6 +340,36 @@ void collect_device_bin_soft_version_get(void)
     heap_caps_free(data);
     fclose(file);
 }
+
+bool collect_device_bin_version_check(void){
+    bool ret = false;
+    if(!iapBinFileUpdate) return ret;
+
+    iapBinFileUpdate = false;
+    FILE* file = fopen(collect_bin_file, "rb");
+    if(file == NULL){
+        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        return ret;
+    }
+    uint8_t *data = heap_caps_malloc(1024,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    size_t bytes_read = fread(data, 1, 1024, file);
+    version_t *version = (version_t *)(data+COLLECT_INFO_OFFSET);
+
+    if(memcmp(version,&collect_version,sizeof(version_t)) > 0){
+        ESP_LOGI(TAG, "bin soft version is:%d-%d-%d  %d.%d.%d",
+            (int)version->year,(int)version->month,(int)version->day,
+            (int)version->aa,(int)version->bb,(int)version->cc);
+        ESP_LOGI(TAG, "run soft version is:%d-%d-%d  %d.%d.%d",
+            (int)collect_version.year,(int)collect_version.month,(int)collect_version.day,
+            (int)collect_version.aa,(int)collect_version.bb,(int)collect_version.cc);
+        
+        ret = true;
+        ESP_LOGW(TAG, "collect device will upgrade...");
+    }else{;}
+
+    return ret;
+}
+
 void collect_device_uart_config(void)
 {
     uart_config_t uart_cfg = {
@@ -443,6 +469,9 @@ void collect_device_read_reg_respond_anlysis(uint16_t reg_addr,uint16_t reg_num,
         ESP_LOGI(TAG, "collect_device_run_soft_version is:%d-%d-%d  %d.%d.%d",
                     (int)version.year,(int)version.month,(int)version.day,
                     (int)version.aa,(int)version.bb,(int)version.cc);
+    }else if(reg_addr>=0x5000 && reg_addr<0x6000){
+        ESP_LOGI(TAG, "collect device read fault info success");
+        modbus_reg_write_no_reverse(reg_addr,data,reg_num); 
     }else{
         ESP_LOGI(TAG, "collect device read reg addr not anlysis,error addr = %04x",reg_addr);
     }
@@ -504,8 +533,7 @@ void collect_device_respond_msg_anlysis(uint8_t cmd,uint16_t reg_addr,uint16_t r
     }
 }
 
-void collect_device_read_calibration(void)
-{
+void collect_device_read_calibration(void){
     printf("[collect_device] Read Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4001,read_reg_num = 80;
@@ -525,8 +553,7 @@ void collect_device_read_calibration(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_read_data(void)
-{
+void collect_device_read_data(void){
     printf("[collect_device] Read Data\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x1003,read_reg_num = 17;
@@ -537,8 +564,18 @@ void collect_device_read_data(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_devicie_read_version(void)
-{
+void collect_devcie_read_fault_info(void){
+    printf("[collect_device] Read Fault Info\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x5000,read_reg_num = 5;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_devicie_read_version(void){
     printf("[collect_device] Read Version\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x3000,read_reg_num = 6;
@@ -548,8 +585,7 @@ void collect_devicie_read_version(void)
     vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
-void collect_device_read_config_param(void)
-{ 
+void collect_device_read_config_param(void){ 
     printf("[collect_device] Read Config Param\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x0000,read_reg_num = 5;
@@ -561,127 +597,7 @@ void collect_device_read_config_param(void)
 }
 
 
-
-void collect_device_balance_check(void)
-{
-    uint16_t balance = 0;
-    modbus_reg_read(0x0006,&balance,1);
-    if(collect_device.balance != balance){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_BALANCE_EVENT_BIT);
-        collect_device.balance = balance;
-    }
-
-}
-
-void collect_device_voltage_calibration_check(void)
-{
-    uint16_t calibration[4] = {0};
-    modbus_reg_read_no_reverse(0x4001,&calibration,4);
-    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],sizeof(calibration))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT);
-        // modbus_reg_write_no_reverse(0x4001,&collect_calibrate_table[0],4);
-        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],calibration,sizeof(uint16_t)*4);
-    }
-
-}
-void collect_device_co_calibration_check(void)
-{
-    uint16_t calibration[12] = {0};
-    uint16_t size = sizeof(calibration);
-    modbus_reg_read_no_reverse(0x4005,&calibration,12);
-    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],sizeof(calibration))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_CO_CALIB_EVENT_BIT);
-        // modbus_reg_write_no_reverse(0x4005,&collect_calibrate_table[4],4);
-        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],calibration,sizeof(calibration));
-    }
-
-}
-
-void collect_device_h2_calibration_check(void)
-{
-    uint16_t calibration[12] = {0};
-    modbus_reg_read_no_reverse(0x4011,&calibration,12);
-    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],sizeof(calibration))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_H2_CALIB_EVENT_BIT);
-        // modbus_reg_write_no_reverse(0x4009,&collect_calibrate_table[8],4);
-        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],calibration,sizeof(calibration));
-    }else{;}
-
-}
-
-void collect_device_battery_temperature_calibration_check(void)
-{
-    uint16_t calibration[4] = {0};
-    modbus_reg_read_no_reverse(0x401D,&calibration,sizeof(calibration)/2);
-    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_BATTERY_TEMP_ADDR],sizeof(calibration))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_BATTERY_TEMP_CALIB_EVENT_BIT);
-        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_BATTERY_TEMP_ADDR],calibration,sizeof(calibration));
-    }else{;}
-}
-
-
-void collect_device_env_info_calibration_check(void)
-{
-    uint16_t calibration[8] = {0};
-    modbus_reg_read_no_reverse(0x4021,&calibration,sizeof(calibration)/2);
-    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_ENV_TEMP_ADDR],sizeof(calibration))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_ENV_INFO_CALIB_EVENT_BIT);
-        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_ENV_TEMP_ADDR],calibration,sizeof(calibration));
-    }else{;}
-}
-
-void collect_device_h2_map_check(void)
-{
-    uint16_t map[50] = {0};
-    // printf("[collect_device] H2 MAP SIZE is %d\r\n",sizeof(map));
-    modbus_reg_read_no_reverse(0x4029,&map,sizeof(map)/2);
-    if(0 != memcmp(map,&collect_map[MAP_TABLE_ZERO_ADDR],sizeof(map))){
-        sysEvent_set(collect_dev_event_group,COLLECT_DEV_H2_MAP_SET_EVENT_BIT);
-        memcpy(&collect_map[MAP_TABLE_ZERO_ADDR],map,sizeof(map));
-    }else{;}
-}
-    
-void collect_device_current_data_updata(void)
-{
-    int16_t current = 0;
-    modbus_reg_read_no_reverse(0x001E,(uint16_t *)&current,1);
-    modbus_reg_write_no_reverse(0x1000,(uint16_t *)&current,1);
-    collect_device_balance_check();
-    collect_device_voltage_calibration_check();
-    collect_device_co_calibration_check();
-    collect_device_h2_calibration_check();
-    collect_device_battery_temperature_calibration_check();
-    collect_device_env_info_calibration_check();
-    collect_device_h2_map_check();
-}
-
-
-void collect_device_balance_set(void)
-{
-    printf("[collect_device] Set Balance Mode\r\n");
-    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
-    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
-    collect_device_clear_rx_fifo();
-    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_device.balance);
-
-    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
-    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
-}
-void collect_device_balance_get(void)
-{
-    printf("[collect_device] Get Balance Mode\r\n");
-    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
-    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
-    collect_device_clear_rx_fifo();
-    collect_device_reg_read(read_reg_addr,read_reg_num);
-
-    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
-    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
-}
-
-
-void collect_device_calibration_open(void)
-{
+void collect_device_calibration_open(void){
     printf("[collect_device] Calibration Open\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
     uint16_t read_reg_addr = 0x4000,read_reg_num = 1;
@@ -693,8 +609,7 @@ void collect_device_calibration_open(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_calibration_close(void)
-{
+void collect_device_calibration_close(void){
     printf("[collect_device] Calibration Close\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
     uint16_t read_reg_addr = 0x4000,read_reg_num = 1;
@@ -707,8 +622,65 @@ void collect_device_calibration_close(void)
 }
 
 
-void collect_device_voltage_calibration_set(void)
-{ 
+/************************************************************************************
+//balance function check、set and get
+************************************************************************************/
+bool collect_device_balance_check(void){
+    bool ret = false;
+    uint16_t balance = 0;
+    modbus_reg_read(0x0006,&balance,1);
+    if(collect_device.balance != balance){
+        collect_device.balance = balance;
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+
+void collect_device_balance_set(void){
+    printf("[collect_device] Set Balance Mode\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
+    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_write(read_reg_addr,read_reg_num,&collect_device.balance);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+void collect_device_balance_get(void){
+    printf("[collect_device] Get Balance Mode\r\n");
+    uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
+    uint16_t read_reg_addr = 0x0004,read_reg_num = 1;
+    collect_device_clear_rx_fifo();
+    collect_device_reg_read(read_reg_addr,read_reg_num);
+
+    vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
+    collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
+}
+
+void collect_device_balance_process(void){
+    if(collect_device_balance_check()){         //均衡状态变化
+        collect_device_balance_set();
+        collect_device_balance_get();
+    }else{;}  
+}
+
+/************************************************************************************
+//voltage calibration function check、set and get
+************************************************************************************/
+bool collect_device_voltage_calibration_check(void){
+    bool ret = false;
+    uint16_t calibration[4] = {0};
+    modbus_reg_read_no_reverse(0x4001,&calibration,4);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],sizeof(calibration))){
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_VOLTAGE_ADDR],calibration,sizeof(uint16_t)*4);
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+
+void collect_device_voltage_calibration_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set Voltage Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -722,8 +694,7 @@ void collect_device_voltage_calibration_set(void)
     collect_device_calibration_close();
 }
 
-void collect_device_voltage_calibration_get(void)
-{
+void collect_device_voltage_calibration_get(void){
     printf("[collect_device] Get Voltage Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4001,read_reg_num = 4;
@@ -734,8 +705,33 @@ void collect_device_voltage_calibration_get(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_co_calibration_set(void)
-{ 
+void collect_device_voltage_calibration_process(void){
+    if(collect_device_voltage_calibration_check()){         //电压校准参数变化
+        collect_device_voltage_calibration_set();
+        collect_device_voltage_calibration_get();
+    }else{;}  
+}
+
+
+
+
+
+/************************************************************************************
+//CO calibration function check、set and get
+************************************************************************************/
+bool collect_device_co_calibration_check(void){
+    bool ret = false;
+    uint16_t calibration[12] = {0};
+    uint16_t size = sizeof(calibration);
+    modbus_reg_read_no_reverse(0x4005,&calibration,12);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],sizeof(calibration))){
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_CO_ADDR],calibration,sizeof(calibration));
+        ret = true;
+    }else{;}
+    return ret;
+}
+
+void collect_device_co_calibration_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set CO Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -748,8 +744,7 @@ void collect_device_co_calibration_set(void)
 
     collect_device_calibration_close();
 }
-void collect_device_co_calibration_get(void)
-{
+void collect_device_co_calibration_get(void){
     printf("[collect_device] Get CO Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4005,read_reg_num = 12;
@@ -759,8 +754,32 @@ void collect_device_co_calibration_get(void)
     vTaskDelay(pdMS_TO_TICKS(COLLECT_DEVICE_RESPOND_TIME));
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
-void collect_device_h2_calibration_set(void)
-{ 
+
+void collect_device_co_calibration_process(void){
+    if(collect_device_co_calibration_check()){         //CO校准参数变化
+        collect_device_co_calibration_set();
+        collect_device_co_calibration_get();
+    }else{;}  
+}
+
+
+/************************************************************************************
+//CO calibration function check、set and get
+************************************************************************************/
+bool collect_device_h2_calibration_check(void){
+    bool ret = false;
+    uint16_t calibration[12] = {0};
+    modbus_reg_read_no_reverse(0x4011,&calibration,12);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],sizeof(calibration))){
+        // modbus_reg_write_no_reverse(0x4009,&collect_calibrate_table[8],4);
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_H2_ADDR],calibration,sizeof(calibration));
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+
+void collect_device_h2_calibration_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set H2 Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -773,8 +792,7 @@ void collect_device_h2_calibration_set(void)
 
     collect_device_calibration_close();
 }
-void collect_device_h2_calibration_get(void)
-{
+void collect_device_h2_calibration_get(void){
     printf("[collect_device] Get H2 Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4011,read_reg_num = 12;
@@ -785,8 +803,29 @@ void collect_device_h2_calibration_get(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_battery_temperature_calibration_set(void)
-{ 
+void collect_device_h2_calibration_process(void){
+    if(collect_device_h2_calibration_check()){         //H2校准参数变化
+        collect_device_h2_calibration_set();
+        collect_device_h2_calibration_get();
+    }else{;}  
+}
+
+/************************************************************************************
+//battery temperature calibration function check、set and get
+************************************************************************************/
+bool collect_device_battery_temperature_calibration_check(void){
+    bool ret = false;
+    uint16_t calibration[4] = {0};
+    modbus_reg_read_no_reverse(0x401D,&calibration,sizeof(calibration)/2);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_BATTERY_TEMP_ADDR],sizeof(calibration))){
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_BATTERY_TEMP_ADDR],calibration,sizeof(calibration));
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+
+void collect_device_battery_temperature_calibration_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set Battery Temperature Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -799,8 +838,7 @@ void collect_device_battery_temperature_calibration_set(void)
 
     collect_device_calibration_close();
 }
-void collect_device_battery_temperature_calibration_get(void)
-{
+void collect_device_battery_temperature_calibration_get(void){
     printf("[collect_device] Get Battery Temperature Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x401D,read_reg_num = 4;
@@ -811,8 +849,28 @@ void collect_device_battery_temperature_calibration_get(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_env_info_calibration_set(void)
-{ 
+void collect_device_battery_temperature_calibration_process(void){
+    if(collect_device_battery_temperature_calibration_check()){         //电池温度校准参数变化
+        collect_device_battery_temperature_calibration_set();
+        collect_device_battery_temperature_calibration_get();
+    }else{;}  
+}
+
+/************************************************************************************
+//env info calibration function check、set and get
+************************************************************************************/
+bool collect_device_env_info_calibration_check(void){
+    bool ret = false;
+    uint16_t calibration[8] = {0};
+    modbus_reg_read_no_reverse(0x4021,&calibration,sizeof(calibration)/2);
+    if(0 != memcmp(calibration,&collect_calibrate_table[CALIBRATE_TABLE_ENV_TEMP_ADDR],sizeof(calibration))){
+        memcpy(&collect_calibrate_table[CALIBRATE_TABLE_ENV_TEMP_ADDR],calibration,sizeof(calibration));
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+void collect_device_env_info_calibration_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set Environment Sersor Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -826,9 +884,7 @@ void collect_device_env_info_calibration_set(void)
     collect_device_calibration_close();
 }
 
-
-void collect_device_env_info_calibration_get(void)
-{
+void collect_device_env_info_calibration_get(void){
     printf("[collect_device] Get Environment Sersor Calibration\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4021,read_reg_num = 8;
@@ -839,8 +895,31 @@ void collect_device_env_info_calibration_get(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-void collect_device_h2_map_set(void)
-{ 
+void collect_device_env_info_calibration_process(void){
+    if(collect_device_env_info_calibration_check()){         //环境传感器校准参数变化
+        collect_device_env_info_calibration_set();
+        collect_device_env_info_calibration_get();
+    }else{;}  
+}
+
+
+/************************************************************************************
+//H2 map function check、set and get
+************************************************************************************/
+bool collect_device_h2_map_check(void){
+    bool ret = false;
+    uint16_t map[50] = {0};
+    // printf("[collect_device] H2 MAP SIZE is %d\r\n",sizeof(map));
+    modbus_reg_read_no_reverse(0x4029,&map,sizeof(map)/2);
+    if(0 != memcmp(map,&collect_map[MAP_TABLE_ZERO_ADDR],sizeof(map))){
+        memcpy(&collect_map[MAP_TABLE_ZERO_ADDR],map,sizeof(map));
+        ret = true;
+    }else{;}
+
+    return ret;
+}
+
+void collect_device_h2_map_set(void){ 
     collect_device_calibration_open();
     printf("[collect_device] Set H2 Sersor Map\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_WRITE;
@@ -854,8 +933,7 @@ void collect_device_h2_map_set(void)
     collect_device_calibration_close();
 }
 
-void collect_device_h2_map_get(void)
-{
+void collect_device_h2_map_get(void){
     printf("[collect_device] Get H2 Sersor Map\r\n");
     uint8_t addr = COLLECT_DEVICE_ADDR,cmd = COLLECT_DEVICE_FUNC_READ;
     uint16_t read_reg_addr = 0x4029,read_reg_num = 50;
@@ -866,44 +944,27 @@ void collect_device_h2_map_get(void)
     collect_device_respond_msg_anlysis(cmd,read_reg_addr,read_reg_num);
 }
 
-
-void collect_device_event_handler(void)
-{
-    uint32_t collect_event = 0;
-    sysEvent_get(collect_dev_event_group,&collect_event);
-    if(collect_event&COLLECT_DEV_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_UPGRADE_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_UPGRADE_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_UPGRADE;
-    }else if(collect_event&COLLECT_DEV_BALANCE_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_BALANCE_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_BALANCE;
-    }else if(collect_event&COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_VOLTAGE_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_CO_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_CO_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_CO_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_H2_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_H2_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_H2_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_BATTERY_TEMP_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_BATTERY_TEMP_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_BATTERY_TEMP_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_ENV_INFO_CALIB_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_ENV_INFO_CALIB_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_ENV_INFO_CALIBRATION;
-    }else if(collect_event&COLLECT_DEV_H2_MAP_SET_EVENT_BIT){
-        sysEvent_clear(collect_dev_event_group,COLLECT_DEV_H2_MAP_SET_EVENT_BIT);
-        collect_process = COLLECT_PROCESS_SET_H2_MAP;
-    }
-    else{;}
+void collect_device_h2_map_process(void){
+    if(collect_device_h2_map_check()){         //H2传感器校准参数变化
+        collect_device_h2_map_set();
+        collect_device_h2_map_get();
+    }else{;}  
+}
+    
+void collect_device_param_update_process(void){
+    collect_device_balance_process();
+    collect_device_voltage_calibration_process();
+    collect_device_co_calibration_process();
+    collect_device_h2_calibration_process();
+    collect_device_battery_temperature_calibration_process();
+    collect_device_env_info_calibration_process();
+    collect_device_h2_map_process();
 }
 
-void collect_device_offline_check(void)
-{
+void collect_device_offline_check(void){
+    static uint8_t cnt = 0;
+    cnt %= 20;
+    if(cnt++ != 0) return;
     if(colDevKeepOnlineTime > 0){           //保持在线时间自减
         colDevKeepOnlineTime--;
     }else{                                  //保持在线时间为零，判定为离线
@@ -915,80 +976,44 @@ void collect_device_offline_check(void)
 void collect_send_task_handler(void *pvParameters)
 {
     uint16_t reply = 0;
-    uint8_t cnt = 0;
+    bool status = false;
     while(1){
-        cnt++;
-        cnt %= 20;
-        if(cnt == 0){
-            collect_device_offline_check();
-        }
-       
+        collect_device_param_update_process();
+        collect_device_offline_check();
 
-        collect_device_event_handler();
         switch (collect_process){
-        case COLLECT_PROCESS_INIT:
-            collect_device_read_calibration();
-            collect_process = COLLECT_PROCESS_GET_VERSION;
-            break;
-        case COLLECT_PROCESS_GET_VERSION:
-            collect_devicie_read_version();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_UPGRADE: 
-            collect_device_upgrade();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_READ_DATA:
-            if(cnt == 1){
+            case COLLECT_PROCESS_INIT:
+                collect_device_read_calibration();                  //geret collect device calibration                 
+                
+                collect_devicie_read_version();                     //get collect device run version        
+                
+                status = collect_device_bin_version_check();        //check collect device need upgrade
+                if(status == true){                                 //collect device need upgrade
+                    collect_process =  COLLECT_PROCESS_UPGRADE;
+                }else{
+                    collect_process = COLLECT_PROCESS_READ_DATA;
+                }
+                break;
+            case COLLECT_PROCESS_UPGRADE: 
+                colDevOnlineStatus = false;
+                collect_device_upgrade();                           //collect device upgrade
+                vTaskDelay(pdMS_TO_TICKS(30000));                   //wait collect device restart
+                collect_devicie_read_version();                     //get collect device run version
+                collect_process = COLLECT_PROCESS_READ_DATA;
+                break;
+            case COLLECT_PROCESS_READ_DATA:
+                status = collect_device_bin_version_check();
+                if(status == true){                                 //collect device need upgrade
+                    collect_process =  COLLECT_PROCESS_UPGRADE;
+                }else{;}
                 collect_device_read_data();
-            }
-            break;
-        case COLLECT_PROCESS_SET_CALIBRATION:
-            // collect_device_calibration_set();
-            break;
-        case COLLECT_PROCESS_READ_CALIBRATION:
-            collect_device_read_calibration();
-            break;
-        case COLLECT_PROCESS_SET_BALANCE:
-            collect_device_balance_set();
-            collect_device_balance_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_VOLTAGE_CALIBRATION:
-            collect_device_voltage_calibration_set();
-            collect_device_voltage_calibration_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_CO_CALIBRATION:
-            collect_device_co_calibration_set();
-            collect_device_co_calibration_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_H2_CALIBRATION:
-            collect_device_h2_calibration_set();
-            collect_device_h2_calibration_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_BATTERY_TEMP_CALIBRATION:
-            collect_device_battery_temperature_calibration_set();
-            collect_device_battery_temperature_calibration_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_ENV_INFO_CALIBRATION:
-            collect_device_env_info_calibration_set();
-            collect_device_env_info_calibration_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        case COLLECT_PROCESS_SET_H2_MAP:
-            collect_device_h2_map_set();
-            collect_device_h2_map_get();
-            collect_process = COLLECT_PROCESS_READ_DATA;
-            break;
-        default:
-            break;
+                collect_devcie_read_fault_info();
+                break;
+            default:
+                collect_process = COLLECT_PROCESS_INIT;
+                break;
         }   
-        collect_device_current_data_updata();
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(400));                             //保证数据更新周期为1s
     }
 }
 
@@ -1036,8 +1061,8 @@ void collect_device_init(void)
     collect_device_uart_config();
     collect_process = COLLECT_PROCESS_INIT;
     collect_device_bin_soft_version_get();
-    xTaskCreatePinnedToCore(collect_send_task_handler,"rs485_send_task",1024*5,NULL,5,NULL,0);
-    xTaskCreatePinnedToCore(collect_recive_task_handler,"rs485_recive_task",1024*5,NULL,5,NULL,0);
+    xTaskCreatePinnedToCore(collect_send_task_handler,"rs485STask",1024*5,NULL,5,NULL,0);
+    xTaskCreatePinnedToCore(collect_recive_task_handler,"rs485RTask",1024*5,NULL,5,NULL,0);
 }
 
 

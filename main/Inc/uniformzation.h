@@ -7,7 +7,7 @@
 
 #include "sys.h"
 
-void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index);
+void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index,uint32_t uniformizationFlag);
 
 
 #endif
