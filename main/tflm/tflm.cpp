@@ -218,6 +218,7 @@ extern "C" void tflm_run(tflm_module_t *tflm,float *input_data,uint32_t input_nu
     tflite::MicroInterpreter *interpreter = (tflite::MicroInterpreter *)tflm->interpreter;
     interpreter->AllocateTensors();
 
+
     TfLiteTensor *input  = interpreter->input(0);
     TfLiteTensor *output = interpreter->output(0);
     

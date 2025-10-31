@@ -3,7 +3,19 @@
 #include "modbus.h"
 #include "bpa.h"
 
-static const char *TAG = "PRJ_alarm";
+static const char *TAG = "PRJ_ALARM";
+#define PRJ_ALARM_LOG_ENABLE                0                    //soh log enable
+#if PRJ_ALARM_LOG_ENABLE
+#define PRJ_ALARM_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_ALARM_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_ALARM_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_ALARM_PRINTF(x,...)          
+#define PRJ_ALARM_LOGI(format, ...)       
+#define PRJ_ALARM_LOGW(format, ...)       
+#endif
+
+#define PRJ_ALARM_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
 
 
 //1AH电量电解水析出0.418L氢气，0.209L氧气（理论值）  200Ah————>83.6L氢气,(H2O含量1.7~1.8公斤水含220L氢气)
@@ -56,7 +68,7 @@ static const char *TAG = "PRJ_alarm";
 #define ALARM_H2                0x0040
 #define ALARM_CO                0x0080
 
-#define ALARM_RESULT_REG        0x200C
+#define ALARM_RESULT_REG        0x2011
 
 typedef enum _alarm_input{
     ALARM_INPUT_VOLTAGE = 0,
@@ -247,7 +259,7 @@ void alarm_informatin_processing(void){
     }else{;}
 
 
-    ESP_LOGW(TAG, "烟雾:%f ,氢气:%f ,一氧化碳:%f ,温度:%f ,电压:%f ,电流:%f ",
+    PRJ_ALARM_LOGI("烟雾:%f ,氢气:%f ,一氧化碳:%f ,温度:%f ,电压:%f ,电流:%f ",
             alarm_input_data[ALARM_INPUT_SMK],alarm_input_data[ALARM_INPUT_H2],alarm_input_data[ALARM_INPUT_CO],
             alarm_input_data[ALARM_INPUT_TEMP],alarm_input_data[ALARM_INPUT_VOLTAGE],alarm_input_data[ALARM_INPUT_CURRENT]);
 

@@ -4,6 +4,22 @@
 
 static const char *TAG = "PRJ_IAP";
 
+#define PRJ_IAP_LOG_ENABLE      0                     //采集底板日志使能
+
+#if PRJ_IAP_LOG_ENABLE
+#define PRJ_IAP_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_IAP_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_IAP_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_IAP_PRINTF(x,...)          
+#define PRJ_IAP_LOGI(format, ...)       
+#define PRJ_IAP_LOGW(format, ...)       
+#endif
+
+#define PRJ_IAP_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+
 static const char *collect_bin_file = "/littlefs/battery_info_collect.bin";
 static const char *collect_cache_bin_file = "/littlefs/battery_info_collect_cache.bin";
 const char *app_name = "batteryInfoCollectSoftware";
@@ -12,7 +28,7 @@ const char *app_name = "batteryInfoCollectSoftware";
 #define IAP_APP			1
 #define APP_TYPE		FACTORY_APP
 #define APP_MAX_SIZE			0xA000				//40kb
-#define REG_IAP_START_FLAG 		0x200F
+#define REG_IAP_START_FLAG 		0x2014
 #define REG_IAP_VERSION_YEAR 	0x3000
 #define REG_IAP_VERSION_AA 		0x3003
 #define REG_IAP_VERSION_BB 		0x3004
@@ -52,8 +68,8 @@ typedef enum _iap_flag
 }iap_falg_t;
 
 typedef enum _iap_status{ 
-	IAP_STATUS_UPGRADING = 0,
-	IAP_STATUS_FINISH,
+	IAP_STATUS_FINISH = 0,
+	IAP_STATUS_UPGRADING = 1,
 	IAP_STATUS_BIN_OVER,
 	IAP_STATUS_BIN_ERROR,
 	IAP_STATUS_VERSION_ERROR,
@@ -104,7 +120,7 @@ iap_info_t iap_info;
 uint16_t   iap_delay_time = IAP_TIMEOUT;					//IAP���̳�ʱʱ��
 uint8_t    app_is_executable = 0;
 
-bool iapBinFileUpdate = true;
+bool iapBinFileUpdate = false;
 
 #define IAP_INFO_OFFSET		0x300
 
@@ -114,7 +130,7 @@ void iap_get_bin_version(version_t *bin_version)
 {
     FILE* file = fopen(collect_bin_file, "rb");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        PRJ_IAP_LOGE("Failed to open file for upgrade,not found bin file");
         return;
     }
     uint8_t *data = heap_caps_malloc(1024,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
@@ -122,7 +138,7 @@ void iap_get_bin_version(version_t *bin_version)
     version_t *version = (version_t *)(data+IAP_INFO_OFFSET);
     memcpy(bin_version,version,sizeof(version_t));
 
-    ESP_LOGI(TAG, "collect_device_bin_soft_version is:%d-%d-%d  %d.%d.%d",
+    PRJ_IAP_LOGI("collect_device_bin_soft_version is:%d-%d-%d  %d.%d.%d",
             (int)bin_version->year,(int)bin_version->month,(int)bin_version->day,
             (int)bin_version->aa,(int)bin_version->bb,(int)bin_version->cc);
 
@@ -134,7 +150,7 @@ void iap_get_cache_bin_version(version_t *cache_version)
 {
     FILE* file = fopen(collect_cache_bin_file, "rb");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        PRJ_IAP_LOGE("Failed to open file for upgrade,not found bin file");
         return;
     }
     uint8_t *data = heap_caps_malloc(1024,MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
@@ -142,7 +158,7 @@ void iap_get_cache_bin_version(version_t *cache_version)
     version_t *version = (version_t *)(data+IAP_INFO_OFFSET);
     memcpy(cache_version,version,sizeof(version_t));
 
-    ESP_LOGI(TAG, "collect_device_bin_soft_version is:%d-%d-%d  %d.%d.%d",
+    PRJ_IAP_LOGI("collect_device_bin_soft_version is:%d-%d-%d  %d.%d.%d",
             (int)cache_version->year,(int)cache_version->month,(int)cache_version->day,
             (int)cache_version->aa,(int)cache_version->bb,(int)cache_version->cc);
 
@@ -188,7 +204,7 @@ void iap_start(void)
 {
     iap_info.file = fopen(collect_cache_bin_file, "w");
     if(iap_info.file == NULL){
-        ESP_LOGE(TAG, "Failed to open file to save bin");
+        PRJ_IAP_LOGE("Failed to open file to save bin");
         return;
     }
 }
@@ -197,7 +213,7 @@ void iap_bin_write(uint8_t *data,uint16_t length)
 {
     size_t size = fwrite(data, 1, length, iap_info.file);
     iap_info.bin_size += size;
-	ESP_LOGI(TAG, "iap write size:%d",(int)iap_info.bin_size);
+	PRJ_IAP_LOGI(TAG, "iap write size:%d",(int)iap_info.bin_size);
 }
 
 void iap_bin_end(void)
@@ -272,10 +288,10 @@ void iap_write_data(uint8_t *pdata,uint16_t num,uint16_t timeout)
 bool iap_app_name_check(uint8_t *pdata,uint16_t num)
 {
 	app_info_t *new_app_info = (app_info_t *)(pdata + IAP_INFO_OFFSET);
-	ESP_LOGI(TAG, "new_app_info->version is:%d-%d-%d  %d.%d.%d",(int)new_app_info->version.year,(int)new_app_info->version.month,(int)new_app_info->version.day,
+	PRJ_IAP_LOGI("new_app_info->version is:%d-%d-%d  %d.%d.%d",(int)new_app_info->version.year,(int)new_app_info->version.month,(int)new_app_info->version.day,
 		(int)new_app_info->version.aa,(int)new_app_info->version.bb,(int)new_app_info->version.cc);
-	ESP_LOGI(TAG, "new_app_info->name len:%d",strlen(new_app_info->name));
-	ESP_LOGI(TAG, "run_app_info->name len:%d",strlen(app_name));
+	PRJ_IAP_LOGI("new_app_info->name len:%d",strlen(new_app_info->name));
+	PRJ_IAP_LOGI("run_app_info->name len:%d",strlen(app_name));
 
 	if(0 == strcmp(new_app_info->name,app_name)){
 		return true;
@@ -289,9 +305,9 @@ bool iap_app_version_check(uint8_t *pdata,uint16_t num)
 	version_t *run_app_version = &iap_info.run_app_version;
 	version_t *new_app_version = (version_t *)(pdata + IAP_INFO_OFFSET);
 	
-	ESP_LOGI(TAG, "run app version is:%d-%d-%d  %d.%d.%d",(int)run_app_version->year,(int)run_app_version->month,(int)run_app_version->day,
+	PRJ_IAP_LOGI("run app version is:%d-%d-%d  %d.%d.%d",(int)run_app_version->year,(int)run_app_version->month,(int)run_app_version->day,
 		(int)run_app_version->aa,(int)run_app_version->bb,(int)run_app_version->cc);
-	ESP_LOGI(TAG, "new app version is:%d-%d-%d  %d.%d.%d",(int)new_app_version->year,(int)new_app_version->month,(int)new_app_version->day,
+	PRJ_IAP_LOGI("new app version is:%d-%d-%d  %d.%d.%d",(int)new_app_version->year,(int)new_app_version->month,(int)new_app_version->day,
 		(int)new_app_version->aa,(int)new_app_version->bb,(int)new_app_version->cc);
 
 
@@ -345,10 +361,10 @@ bool iap_head_check(void)
 			return status;
 		}else{;}
 			
-		if(false == iap_app_version_check(read_data,1024)){
-			status = false;
-			return status;
-		}else{;}
+		// if(false == iap_app_version_check(read_data,1024)){
+		// 	status = false;
+		// 	return status;
+		// }else{;}
 		
 		iap_bin_write(read_data,read_bytes);
 		iap_delay_time = IAP_TIMEOUT;
@@ -411,7 +427,7 @@ bool iap_bin_crc(void)
 	bool status = true;
     FILE* file = fopen(collect_cache_bin_file, "rb");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        PRJ_IAP_LOGE("Failed to open file for upgrade,not found bin file");
         return false;
     }
     fseek(file, 0L, SEEK_END);  // ��λ���Ƶ��ļ���β
@@ -423,7 +439,7 @@ bool iap_bin_crc(void)
 
 
 	iap_info.bin_crc = iap_crc_calculate(data,iap_info.bin_size);
-	ESP_LOGI(TAG, "bin crc is:%04x,cal_crc is:%04x",iap_info.upgrade_crc,iap_info.bin_crc);
+	PRJ_IAP_LOGI("bin crc is:%04x,cal_crc is:%04x",iap_info.upgrade_crc,iap_info.bin_crc);
 	
 	if(iap_info.bin_crc == iap_info.upgrade_crc){
 		iap_info.iap_status = IAP_STATUS_FINISH;
@@ -444,7 +460,7 @@ bool iap_app_update(void)
 	FILE* file_cache = fopen(collect_cache_bin_file, "rb");
 	FILE* file_bin = fopen(collect_bin_file, "w");
 	if(file_cache == NULL || file_bin == NULL){
-		ESP_LOGE(TAG, "Failed to open cache file bin file");
+		PRJ_IAP_LOGE("Failed to open cache file bin file");
 		return status;
 	}
 
@@ -506,7 +522,7 @@ void iap_upgrade_process(void *param)
 				iap_app_update();
 				iapBinFileUpdate = true;
 				iap_get_bin_version(&iap_info.run_app_version);
-				ESP_LOGI(TAG, "iap upgrade success,error code is:%d",iap_info.iap_status);
+				PRJ_IAP_LOGI("iap upgrade success,error code is:%d",iap_info.iap_status);
 			}else{
 				iap_info.process = IAP_PROCESS_ERROR;
 			}
@@ -518,7 +534,7 @@ void iap_upgrade_process(void *param)
 			iap_fifo.tail = 0;
 			iap_bin_end();
 			modbus_reg_write(REG_IAP_START_FLAG,&iap_info.iap_status,1);
-			ESP_LOGI(TAG, "iap upgrade error,error code is:%d",iap_info.iap_status);
+			PRJ_IAP_LOGI("iap upgrade error,error code is:%d",iap_info.iap_status);
 			break;
 		default:
 			iap_info.bin_size = 0;

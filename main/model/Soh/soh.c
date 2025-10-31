@@ -7,6 +7,20 @@
 
 static const char *TAG = "PRJ_SOH";
 
+#define PRJ_SOH_LOG_ENABLE      1                     //soh log enable
+#if PRJ_SOH_LOG_ENABLE
+#define PRJ_SOH_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_SOH_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_SOH_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_SOH_PRINTF(x,...)          
+#define PRJ_SOH_LOGI(format, ...)       
+#define PRJ_SOH_LOGW(format, ...)       
+#endif
+
+#define PRJ_SOH_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
 tflm_module_t soh_modle;
 
 typedef enum _soh_input_type
@@ -29,14 +43,9 @@ float soh_output_data[SOH_INPUT_WINDOW_SIZE];
 uint16_t soh_input_index = 0;
 bool soh_input_full  = false;
 
-extern const int soh_model_data_len;
-extern const unsigned char soh_model_data[];
+extern const int soh_model_data_len_1L;
+extern const unsigned char soh_model_data_1L[];
 
-extern const int soh1_model_data_len;
-extern const unsigned char soh1_model_data[];
-
-extern const int soh4_model_data_len;
-extern const unsigned char soh4_model_data[];
 
 bool sohPredFlag = false;
 
@@ -45,11 +54,11 @@ bool sohPredFlag = false;
 void soh_inference_task_handler(void *parameters)
 {
     if(!soh_input_full){
-        ESP_LOGW(TAG,"SOH input fifo is not full...  index = %d",(int)soh_input_index);
+        PRJ_SOH_LOGW("SOH input fifo is not full...  index = %d",(int)soh_input_index);
         return;
     }
     if(soh_modle.interpreter == NULL){
-        ESP_LOGE(TAG,"SOH modle interpreter is not create...");
+        PRJ_SOH_LOGE("SOH modle interpreter is not create...");
         return;
     }
     static int64_t max_time;
@@ -61,23 +70,23 @@ void soh_inference_task_handler(void *parameters)
 
     //获取开始时间 (微秒)
     start_time = esp_timer_get_time();
-    ESP_LOGI(TAG,"SOH modle inference start...");
+    PRJ_SOH_LOGI("SOH modle inference start...");
     tflm_run(&soh_modle,inputWicket,SOH_INPUT_WINDOW_SIZE*SOH_INPUT_TYPE_NUM,soh_output_data,SOH_OUTPUT_SIZE);
     // 获取结束时间 (微秒)
     end_time = esp_timer_get_time();
     // 计算时间差 (毫秒)
     elapsed_time_ms = (end_time - start_time)/1000;
     if(elapsed_time_ms > max_time)  max_time = elapsed_time_ms;
-    ESP_LOGI(TAG,"SOH modle inference finish...,use time = %d ms",(int)elapsed_time_ms);
-    ESP_LOGW(TAG,"SOH modle inference finish...,max use time = %d ms",(int)max_time);
+    PRJ_SOH_LOGI("SOH modle inference finish...,use time = %d ms",(int)elapsed_time_ms);
+    PRJ_SOH_LOGW("SOH modle inference finish...,max use time = %d ms",(int)max_time);
 
     for(int i=0;i<soh_modle.result_num;i++){
-        printf("SOH modle inference result[%d]: %f",i,soh_output_data[i]);
+        PRJ_SOH_PRINTF("SOH modle inference result[%d]: %f",i,soh_output_data[i]);
     }
     uint16_t soh_1l = soh_output_data[0]*10000;
     modbus_reg_write(SOH_PREDICTION_1L_REG,(uint16_t *)&soh_1l,1);
 
-    printf("\r\n");
+    PRJ_SOH_PRINTF("\r\n");
     heap_caps_free(inputWicket);
     // vTaskDelay(pdMS_TO_TICKS(1000));
 }
@@ -101,7 +110,7 @@ void soh_modle_init(void)
 {
 
     soh_modle.interpreter = NULL;
-    soh_modle.model_data = soh_model_data;
+    soh_modle.model_data = soh_model_data_1L;
     
     tflm_create(&soh_modle);
     // xTaskCreatePinnedToCore(soh_inference_task_handler,"soh_task",1024*4,NULL,7,NULL,1);

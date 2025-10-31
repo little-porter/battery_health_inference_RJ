@@ -2,7 +2,21 @@
 
 
 
-static char *TAG = "uniformization";
+static char *TAG = "PRJ_UNIFORMIZATION";
+
+#define PRJ_UNIFORMIZATION_LOG_ENABLE      0                     //uniformization log enable
+
+#if PRJ_UNIFORMIZATION_LOG_ENABLE
+#define PRJ_UNIFORMIZATION_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_UNIFORMIZATION_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_UNIFORMIZATION_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_UNIFORMIZATION_PRINTF(x,...)          
+#define PRJ_UNIFORMIZATION_LOGI(format, ...)       
+#define PRJ_UNIFORMIZATION_LOGW(format, ...)       
+#endif
+
+#define PRJ_UNIFORMIZATION_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
 
 
 void uniformization_interface(void *src_window,void *des_window,uint64_t row,uint64_t column,uint64_t now_index,uint32_t uniformizationFlag)
@@ -15,9 +29,9 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
     float (*uniformization_data)[column] = (float *)des_window;
 
     if((NULL == data_window) || (des_window == NULL) || (max == NULL) || (min == NULL) || (diff == NULL)){
-        ESP_LOGE(TAG,"malloc error");
+        PRJ_UNIFORMIZATION_LOGE("malloc error");
     }
-    // printf("row = %d,column = %d,now_index = %d\n",(int)row,(int)column,(int)now_index);
+    PRJ_UNIFORMIZATION_PRINTF("row = %d,column = %d,now_index = %d\n",(int)row,(int)column,(int)now_index);
 
     //初始化最大值、最小值
     for(int i=0;i<column;i++){
@@ -35,8 +49,8 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
             }else{;}
         }
         diff[i] = max[i] - min[i];
-        // printf("max[%d] = %f,min[%d] = %f,diff[%d] = %f\n",i,max[i],i,min[i],i,diff[i]);
-        printf("\r\n");
+        PRJ_UNIFORMIZATION_PRINTF("max[%d] = %f,min[%d] = %f,diff[%d] = %f\n",i,max[i],i,min[i],i,diff[i]);
+        PRJ_UNIFORMIZATION_PRINTF("\r\n");
     }
 
     //进行数据归一化
@@ -51,8 +65,8 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
         for(int j=0;j<column;j++){
             if(uniformizationFlag&(1<<j)){
                 uniformization_data[i][j] = data_window[index_row][j];
-                // printf("uniformizationFlag = %d, result = %d\r\n",(int)uniformizationFlag,(int)uniformizationFlag&(1<<j));
-                // printf("uniformization_data[%d][%d] = %f\r\n",i,j,uniformization_data[i][j]);
+                // PRJ_UNIFORMIZATION_PRINTF("uniformizationFlag = %d, result = %d\r\n",(int)uniformizationFlag,(int)uniformizationFlag&(1<<j));
+                // PRJ_UNIFORMIZATION_PRINTF("uniformization_data[%d][%d] = %f\r\n",i,j,uniformization_data[i][j]);
             }else{
                if(diff[j] != 0){
                     uniformization_data[i][j] = (data_window[index_row][j] - min[j])/diff[j];
@@ -61,9 +75,9 @@ void uniformization_interface(void *src_window,void *des_window,uint64_t row,uin
                 }
             }
             
-            // if(i == row-1){
-            //     printf("uniformization_data[%d][%d] = %f, data_window[%d][%d] = %f\r\n",i,j,uniformization_data[i][j],index_row,j,data_window[index_row][j]);
-            // }
+            if(i == row-1){
+                PRJ_UNIFORMIZATION_PRINTF("uniformization_data[%d][%d] = %f, data_window[%d][%d] = %f\r\n",i,j,uniformization_data[i][j],index_row,j,data_window[index_row][j]);
+            }
         }
     }
 

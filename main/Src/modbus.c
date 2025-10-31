@@ -5,6 +5,26 @@
 
 #include "devConfig.h"
 
+
+static char *TAG = "PRJ_MODBUS";
+
+#define PRJ_BATTERYDATA_LOG_ENABLE      0                     //MODBUS日志使能
+
+#if PRJ_MODBUS_LOG_ENABLE
+#define PRJ_MODBUS_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_MODBUS_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_MODBUS_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_MODBUS_PRINTF(x,...)          
+#define PRJ_MODBUS_LOGI(format, ...)       
+#define PRJ_MODBUS_LOGW(format, ...)       
+#endif
+
+#define PRJ_MODBUS_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+
+
 /*private 文件内部私有*/
 #define POLYNOMIAL 0xA001   // Modbus CRC-16 polynomial (低字节优�?)
 uint16_t crcTable[256];     // CRC-16 table
@@ -210,7 +230,7 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
     uint8_t ack_msg[256] = {0};
     uint16_t pos = 0,cal_crc = 0;
     uint16_t *ack_reg = NULL;
-    static uint16_t heart = 0;
+    // static uint16_t heart = 0;
     if(num > REG_TABLE_LEN){
         /* 寄存器数量错�? */
         modbus_error_ask(cmd,0x03);
@@ -221,8 +241,8 @@ void modbus_read_ack(uint8_t cmd, uint16_t addr,uint16_t num)
         ack_reg = &config_reg_table[addr];
     }else if(addr<0x2000){
         ack_reg = &data_reg_table[addr-0x1000];
-        heart++;
-        ack_reg[11] = heart>>8 | (heart&0xff)<<8;
+        // heart++;
+        // ack_reg[11] = heart>>8 | (heart&0xff)<<8;
     }else if(addr<0x3000){
         ack_reg = &result_reg_table[addr-0x2000];
     }else if(addr<0x4000){
@@ -313,18 +333,31 @@ void config_msg_deal_handler(uint8_t *data,uint16_t length);
 void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
 {
     uint16_t crc=0,cal_crc=0;
-    if(length < 4) return;
+    if(length < 4){
+        PRJ_MODBUS_LOGE("modbus msg length error!,length:%d",length);
+        return;
+    }
     uint8_t modbusAddr = data[MODBUS_ADDR_IDX];
-    if((modbusAddr != devCfg.modbusAddr) && (modbusAddr != broadcast_addr)) return;
+    if((modbusAddr != devCfg.modbusAddr) && (modbusAddr != broadcast_addr)){
+        PRJ_MODBUS_LOGE("modbus msg addr error!,modbusAddr:%d",modbusAddr);
+        return;
+    }
     crc = data[length-2] | data[length-1]<<8;
     cal_crc = modbus_calculate_crc(data,length-2);
-    if(crc != cal_crc) return;
+    if(crc != cal_crc){
+        PRJ_MODBUS_LOGE("modbus msg crc error!,crc:%d,cal_crc:%d",crc,cal_crc);
+        for(uint16_t i=0;i<length;i++){
+            PRJ_MODBUS_PRINTF("%02x ",data[i]);
+        }
+        PRJ_MODBUS_PRINTF("\r\n");
+        return;
+    }
     uint8_t cmd = data[MODBUS_FUNCODE_IDX];
     uint16_t addr = data[REG_START_ADDR_IDX]<<8 | data[REG_START_ADDR_IDX+1];
     uint16_t num = data[REG_NUM_IDX]<<8 | data[REG_NUM_IDX+1];
 
-    // ESP_LOGE("MODBUS", "cmd:%d,modbusAddr:%d,num:%d",cmd,modbusAddr,num);
-    // ESP_LOGE("MODBUS", "deviceADDR:%d,broadcast_addr:%d",device_cfg.modbus_addr,broadcast_addr);
+    // PRJ_MODBUS_LOGE("MODBUS", "cmd:%d,modbusAddr:%d,num:%d",cmd,modbusAddr,num);
+    // PRJ_MODBUS_LOGE("MODBUS", "deviceADDR:%d,broadcast_addr:%d",device_cfg.modbus_addr,broadcast_addr);
 
     switch (cmd)
     {
@@ -344,7 +377,7 @@ void modbus_msg_deal_handler(uint8_t *data,uint16_t length)
             config_msg_deal_handler(data,length);
         }else{;}
         
-        // ESP_LOGI("OTA", "OTA recive data");
+        // PRJ_MODBUS_LOGI("OTA", "OTA recive data");
         break;
     default:
         /*功能码错�?*/

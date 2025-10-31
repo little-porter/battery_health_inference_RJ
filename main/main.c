@@ -11,6 +11,7 @@
 #include "led.h"
 #include "collect_device.h"
 
+#include "devStatus.h"
 #include "devConfig.h"
 #include "alarm.h"
 
@@ -27,6 +28,20 @@
 
 static const char *TAG = "PRJ_MAIN";
 
+#define PRJ_MAIN_LOG_ENABLE      1                     //soh log enable
+#if PRJ_MAIN_LOG_ENABLE
+#define PRJ_MAIN_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_MAIN_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_MAIN_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_MAIN_PRINTF(x,...)          
+#define PRJ_MAIN_LOGI(format, ...)       
+#define PRJ_MAIN_LOGW(format, ...)       
+#endif
+
+#define PRJ_MAIN_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
 void collect_device_power_on(void)
 {
     gpio_config_t io_conf;
@@ -38,8 +53,7 @@ void collect_device_power_on(void)
     gpio_config(&io_conf);
     gpio_set_level(GPIO_NUM_46,1);
 }
-
-
+ 
 void app_main(void)
 {
     collect_device_power_on();
@@ -56,6 +70,7 @@ void app_main(void)
     iap_init();
     rs485_driver_init(&rs485_driver);
     led_init();
+    devStatus_init();
     
     
     collect_device_init();
@@ -63,13 +78,13 @@ void app_main(void)
     //模型相关
     tflm_init();
     soc_modle_init();
-    // soh_modle_init();
+    soh_modle_init();
     // rsk_modle_init();
     battery_data_init();
 
     // socModelVerify_init();
     // rskModelVerify_init();
-    // alarm_init();
+    alarm_init();
     configJson_init();
 
     while (1)
@@ -77,7 +92,7 @@ void app_main(void)
         /* code */
         vTaskDelay(pdMS_TO_TICKS(5000));
         littlefs_ops_read_file_info();
-        ESP_LOGI(TAG,"sys running...");
+        PRJ_MAIN_LOGI("sys running...");
         // soc_init_value_get();
     }
     

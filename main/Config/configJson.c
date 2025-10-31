@@ -2,7 +2,22 @@
 #include "modbus.h"
 #include "cJSON.h"
 
-static char* TAG = "PRJ_configJson";
+static char* TAG = "PRJ_CONFIGJSON";
+#define PRJ_CONFIGJSON_LOG_ENABLE      1                     //soh log enable
+#if PRJ_CONFIGJSON_LOG_ENABLE
+#define PRJ_CONFIGJSON_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_CONFIGJSON_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_CONFIGJSON_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_CONFIGJSON_PRINTF(x,...)          
+#define PRJ_CONFIGJSON_LOGI(format, ...)       
+#define PRJ_CONFIGJSON_LOGW(format, ...)       
+#endif
+
+#define PRJ_CONFIGJSON_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+
 static char* file_configJson = "/littlefs/config.json";
 static char* file_configJson_cache = "/littlefs/configCache.json";
 
@@ -29,8 +44,8 @@ typedef enum _configJson_update_flag{
 }configJson_update_flag_t;
 
 typedef enum _configJson_updtate_status{
-    CONFIGJSON_UPDATE_STATUS_UPGRADING = 0,
-    CONFIGJSON_UPDATE_STATUS_FINISH,
+    CONFIGJSON_UPDATE_STATUS_FINISH = 0,
+    CONFIGJSON_UPDATE_STATUS_UPGRADING = 1,
     CONFIGJSON_UPDATE_STATUS_BIN_OVER,
     // CONFIGJSON_UPDATE_STATUS_BIN_ERROR,
     CONFIGJSON_UPDATE_STATUS_CRC_ERROR,
@@ -75,29 +90,29 @@ uint8_t configJson_get_modbusAddr_from_jsonData_by_serial(uint8_t *data,char *se
                 cJSON *item = cJSON_GetArrayItem(device, i);
                 if (item && cJSON_IsObject(item)){
                     cJSON *serial = cJSON_GetObjectItemCaseSensitive(item, "devid");
-                    ESP_LOGE(TAG, "Get device id form config: %s", serial->valuestring);
+                    PRJ_CONFIGJSON_LOGI("Get device id form config: %s", serial->valuestring);
                     if(serial && cJSON_IsString(serial)){
                         if(0 == strcmp(serial->valuestring,serial_str)){                                    //比较设备序列号，获取设备ID
                             modbus_id = atoi(cJSON_GetObjectItemCaseSensitive(item, "adr")->valuestring);
-                            ESP_LOGE(TAG, "Get device id form config: %d", modbus_id);
+                            PRJ_CONFIGJSON_LOGW("Get device id form config: %d", modbus_id);
                             break;
                         }else{
                             continue;
                         }
                     }else{
-                        ESP_LOGE(TAG, "Failed to parse JSON serial");
+                        PRJ_CONFIGJSON_LOGE("Failed to parse JSON serial");
                     }
                 }else{
-                    ESP_LOGE(TAG, "Failed to parse JSON item is not object");
+                    PRJ_CONFIGJSON_LOGE("Failed to parse JSON item is not object");
                 }     
             }   
         }else{
-            ESP_LOGE(TAG, "Failed to parse JSON device");
+            PRJ_CONFIGJSON_LOGE("Failed to parse JSON device");
         }
 
         cJSON_Delete(root);                                                                             // 释放JSON对象
     }else{
-        ESP_LOGE(TAG, "Failed to parse JSON root");
+        PRJ_CONFIGJSON_LOGE("Failed to parse JSON root");
     }
 
     return modbus_id;
@@ -106,11 +121,11 @@ uint8_t configJson_get_modbusAddr_from_jsonData_by_serial(uint8_t *data,char *se
 uint16_t configJson_get_modbusAddr_by_serial(char *serial_str)
 {
     uint8_t modbus_id = 0;
-    ESP_LOGI(TAG, "Read configJSON file");
+    PRJ_CONFIGJSON_LOGI("Read configJSON file");
 
     FILE* file = fopen(file_configJson, "r");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open configJSON file!");
+        PRJ_CONFIGJSON_LOGE("Failed to open configJSON file!");
         return modbus_id;
     }else{;}
 
@@ -121,7 +136,7 @@ uint16_t configJson_get_modbusAddr_by_serial(char *serial_str)
     uint8_t *data = heap_caps_malloc(size, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
     size_t read_num = fread(data, 1, size, file);
     if(read_num != size){
-        ESP_LOGE(TAG, "Failed to read configJSON file!");
+        PRJ_CONFIGJSON_LOGE("Failed to read configJSON file!");
         heap_caps_free(data);
         fclose(file);
         return modbus_id;
@@ -189,7 +204,7 @@ void configJson_cache_update_start(void)
 {
     configJson_info.cacheFile = fopen(file_configJson_cache, "w");
     if(configJson_info.cacheFile == NULL){
-        ESP_LOGE(TAG, "Failed to open file to save configJson");
+        PRJ_CONFIGJSON_LOGE("Failed to open file to save configJson");
         return;
     }
 }
@@ -198,7 +213,7 @@ void configJson_cache_update_data_write(uint8_t *data,uint16_t length)
 {
     size_t size = fwrite(data, 1, length, configJson_info.cacheFile);
     configJson_info.bin_size += size;
-	ESP_LOGI(TAG, "configJson write size:%d",(int)configJson_info.bin_size);
+	PRJ_CONFIGJSON_LOGI("configJson write size:%d",(int)configJson_info.bin_size);
 }
 
 void configJson_cache_update_end(void)
@@ -230,7 +245,7 @@ bool configJson_cache_crc(void){
     bool status = true;
     FILE* file = fopen(file_configJson_cache, "rb");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open file for upgrade,not found bin file");
+        PRJ_CONFIGJSON_LOGE("Failed to open file for upgrade,not found bin file");
         return false;
     }
     fseek(file, 0L, SEEK_END);          //point to file end
@@ -242,7 +257,7 @@ bool configJson_cache_crc(void){
 
 
 	configJson_info.bin_crc = configJson_crc_calculate(data,configJson_info.bin_size);
-	ESP_LOGI(TAG, "bin crc is:%04x,cal_crc is:%04x",configJson_info.update_crc,configJson_info.bin_crc);
+	PRJ_CONFIGJSON_LOGI("bin crc is:%04x,cal_crc is:%04x",configJson_info.update_crc,configJson_info.bin_crc);
 	
 	if(configJson_info.bin_crc == configJson_info.update_crc){
 		configJson_info.status = CONFIGJSON_PROCESS_FINISH;
@@ -264,7 +279,7 @@ bool configJson_update(void){
 	FILE* file_cache = fopen(file_configJson_cache, "rb");
 	FILE* file_bin = fopen(file_configJson, "w");
 	if(file_cache == NULL || file_bin == NULL){
-		ESP_LOGE(TAG, "Failed to open cache file bin file");
+		PRJ_CONFIGJSON_LOGE("Failed to open cache file bin file");
 		return status;
 	}
 
@@ -300,7 +315,7 @@ void configJson_update_modbusAddr(void){
     char serialStr[20] = {0};
     modbus_reg_read_no_reverse(CONFIGJSON_SERIAL_REG,(uint16_t *)serialStr,sizeof(serialStr)/2);
     uint16_t modbus_id = configJson_get_modbusAddr_by_serial(serialStr);
-    ESP_LOGW(TAG, "configJson update modbus id to : %d", modbus_id);
+    PRJ_CONFIGJSON_LOGW("configJson update modbus id to : %d", modbus_id);
     modbus_reg_write(CONFIGJSON_MODBUS_ID_REG,&modbus_id,1);
 }
 
@@ -364,6 +379,7 @@ void configJSON_update_task_handler(void *pvParameters){
                 configJson_info.process = CONFIGJSON_PROCESS_IDLE;
                 break;
             case CONFIGJSON_PROCESS_ERROR:
+                configJson_cache_update_end();
                 configJson_info.process = CONFIGJSON_PROCESS_IDLE;
                 break;
             default:
@@ -405,21 +421,27 @@ void configJson_init(void){
 
 void config_msg_deal_handler(uint8_t *data,uint16_t length)
 {
-	if(data[2] != 0xff)  return;
+	if(data[2] != 0xff) {
+        PRJ_CONFIGJSON_LOGE("config json msg type error: %02x", data[2]);
+        return;
+    }
 	uint16_t data_num = data[6] | data[7]<<8;
 	if(data[3] == 0x00){
 		configJson_info.update_size = (data[8]<<0) | (data[9]<<8) | (data[10]<<16) |(data[11]<<24) ;
         configJson_info.flag = CONFIGJSON_UPDATE_FLAG_START;
+        PRJ_CONFIGJSON_LOGE("config json update size: %d", (int)configJson_info.update_size);
 		return;
 	}else if(data[3] == 0x11){
 		configJson_info.update_crc = (data[8]<<0) | (data[9]<<8);
         configJson_info.flag = CONFIGJSON_UPDATE_FLAG_FINISH;
+        PRJ_CONFIGJSON_LOGE("config json update crc: %04x", (int)configJson_info.update_crc);
 		return;
 	}else if(data[3] == 0x10){
 	}else{
 		return;
 	}	
 	
+    PRJ_CONFIGJSON_LOGE("config json data num: %d", data_num);
 	if(data_num <= 1024){
         configJson_write_data_to_fifo(&data[8],data_num,500);  //将数据写入FIFO
         configJson_info.flag = CONFIGJSON_UPDATE_FLAG_IDLE;

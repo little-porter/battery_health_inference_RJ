@@ -9,6 +9,20 @@
 
 static char *TAG = "PRJ_BatteryData";
 
+#define PRJ_BATTERYDATA_LOG_ENABLE      1                     //采集底板日志使能
+
+#if PRJ_BATTERYDATA_LOG_ENABLE
+#define PRJ_BATTERYDATA_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_BATTERYDATA_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_BATTERYDATA_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_BATTERYDATA_PRINTF(x,...)          
+#define PRJ_BATTERYDATA_LOGI(format, ...)       
+#define PRJ_BATTERYDATA_LOGW(format, ...)       
+#endif
+
+#define PRJ_BATTERYDATA_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
 
 #define BATTERY_CURRENT_REG   0x1000
 #define BATTERY_VOLTAGE_REG   0x1003
@@ -16,6 +30,7 @@ static char *TAG = "PRJ_BatteryData";
 #define BATTERY_TEMP_REG      0x1005
 
 // #define BATTERY_TEMP_REG      0x1005
+#define BATTERY_MODBUS_ADDR_REG 0x0000
 
 #define BATTERY_SOC_REG         0x2000
 #define BATTERY_SOC_PRED_1H_REG 0x2001
@@ -59,7 +74,7 @@ void battery_data_soc_initValue_get(void){
     voltage = (ocvVoltage)*1.0/1000;
     batteryData.soc = ocv_soc_get(fabsf(voltage));
 
-    ESP_LOGE("SOC","voltage:%.3f,batterySOC:%.3f",voltage,batteryData.soc);
+    PRJ_BATTERYDATA_LOGW("init voltage:%.3f,batterySOC:%.3f",voltage,batteryData.soc);
 }
 
 void battery_data_chargeTime_get(void){
@@ -83,13 +98,26 @@ void battery_data_chargeTime_get(void){
         lastChargeStatus = batteryData.chargeStatus;
     }
     
-    ESP_LOGE(TAG,"状态:%f,chargeTime:%.3f",batteryData.chargeStatus,batteryData.chargeTime);
+    PRJ_BATTERYDATA_LOGI("getChargeTime state:%f,chargeTime:%.3f",batteryData.chargeStatus,batteryData.chargeTime);
 }
 
 void battery_current_update(void){
-    int16_t current = 0;
-    modbus_reg_read_no_reverse(0x001E,(uint16_t *)&current,1);
-    modbus_reg_write_no_reverse(BATTERY_CURRENT_REG,(uint16_t *)&current,1);
+    // int16_t current = 0;
+    // modbus_reg_read_no_reverse(0x001E,(uint16_t *)&current,1);
+    // modbus_reg_write_no_reverse(BATTERY_CURRENT_REG,(uint16_t *)&current,1);
+    uint16_t current[8] = {0};
+    uint16_t modbusID = 0;
+    modbus_reg_read(BATTERY_MODBUS_ADDR_REG,(uint16_t *)&modbusID,1);
+    modbus_reg_read_no_reverse(0x001E,(uint16_t *)current,8);
+    uint16_t *pID =  (uint16_t *)current;
+    for(int i=0;i<8;i=i+2){
+        if((*(pID+i+1)&0xFF00)>>8 > (*(pID+i+1)&0xFF)){continue;}
+
+        if((*(pID+i+1)&0xFF00)>>8 <= modbusID && (*(pID+i+1)&0xFF) >= modbusID){
+            modbus_reg_write_no_reverse(BATTERY_CURRENT_REG,(uint16_t *)(pID+i),1);
+            break;
+        }else{continue;}
+    }
 }
 
 void battery_data_get(void){
@@ -134,7 +162,7 @@ void battery_data_soc_calibrate(void){
 
         if(keepSilentTime > 60*1000*1000){
             batteryData.soc = ocv_soc_get(batteryData.voltage);
-            ESP_LOGE("SOC","batterySOC:%.3f",batteryData.soc);
+            PRJ_BATTERYDATA_LOGW("socCalibrate batterySOC:%.3f",batteryData.soc);
         }
     }else{
         startFlag = true;
@@ -145,13 +173,13 @@ void battery_data_soc_calibrate(void){
     //2、满充校准
     if(batteryData.voltage >= 4.18 && fabsf(batteryData.current)<BATTERY_STATIC_VALUE){
         batteryData.soc = 100.0;
-        ESP_LOGE("SOC","current:%.3f, batterySOC:%.3f",batteryData.current,batteryData.soc);
+        PRJ_BATTERYDATA_LOGW("socCalibrate current:%.3f, batterySOC:%.3f",batteryData.current,batteryData.soc);
     }else{;}
 
     //3、满放校准
     if(batteryData.voltage <= 3.0){
         batteryData.soc = 0.00;
-        ESP_LOGE("SOC","batterySOC:%.3f",batteryData.soc);
+        PRJ_BATTERYDATA_LOGW("socCalibrate batterySOC:%.3f",batteryData.soc);
     }else{;}
 }
 
@@ -184,7 +212,7 @@ void battery_data_soc_calculate(void){
 
     if(batteryData.soc > 100)   batteryData.soc = 100;
     if(batteryData.soc < 0.00)   batteryData.soc = 0.00;
-    ESP_LOGE("SOC","dq:%.8f,time:%.06f, batterySOC:%.3f,current:%.3f",dq,time,batteryData.soc,batteryData.current);
+    PRJ_BATTERYDATA_LOGI("socCalculate dq:%.8f,time:%.06f, batterySOC:%.3f,current:%.3f",dq,time,batteryData.soc,batteryData.current);
 }
 
 void battery_data_soc_prediction(void){
@@ -209,7 +237,7 @@ void battery_data_soc_prediction(void){
         if (socPred_2h < 0)     socPred_2h = 0;
     }
 
-    ESP_LOGE(TAG,"socPred_1h:%.3f, socPred_2h:%.3f, chargeStatus:%f, chargeFinishTime:%.3f h",socPred_1h,socPred_2h,batteryData.chargeStatus,chargeFinishTime);
+    PRJ_BATTERYDATA_LOGI("socPrediction socPred_1h:%.3f, socPred_2h:%.3f, chargeStatus:%f, chargeFinishTime:%.3f h",socPred_1h,socPred_2h,batteryData.chargeStatus,chargeFinishTime);
 }
 
 void battery_data_soh_calculate(void){
@@ -240,8 +268,9 @@ void battery_data_soh_calculate(void){
             float sohInput[6] = {batteryData.soh,batteryData.voltage,batteryData.current,batteryData.cRate,batteryData.ICArea,batteryData.qVF};
             soh_input_data_fill(sohInput,6,index);
             index++;
-            ESP_LOGW("SOH","index:%d",(int)index);
-            ESP_LOGE("SOH","soh:%.3f, voltage:%.3f, current:%.3f, cRate:%.3f, ICArea:%.3f, dq:%.3f",batteryData.soh,batteryData.voltage,batteryData.current,batteryData.cRate,batteryData.ICArea,batteryData.qVF);
+            PRJ_BATTERYDATA_LOGW("sohInput index:%d",(int)index);
+            PRJ_BATTERYDATA_LOGI("sohInputdata soh:%.3f, voltage:%.3f, current:%.3f, cRate:%.3f, ICArea:%.3f, dq:%.3f",
+                                    batteryData.soh,batteryData.voltage,batteryData.current,batteryData.cRate,batteryData.ICArea,batteryData.qVF);
         }else{;}
     }
 }
@@ -315,8 +344,8 @@ void battery_data_get_task_handler(void *pvParameters){
             float socInput[5] = {batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc/100,batteryData.incrementCap};
             soc_input_data_fill(socInput,5);
             batteryValidFlag = true; 
-            ESP_LOGW(TAG,"socInput chargeStatus:%f, voltage:%.3f, chargeTime:%.3f, soc:%.3f, incrementCap:%f",
-                batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc/100,batteryData.incrementCap);
+            PRJ_BATTERYDATA_LOGI("socInputData :chargeStatus:%f, voltage:%.3f, chargeTime:%.3f, soc:%.3f, incrementCap:%f",
+                                    batteryData.chargeStatus,batteryData.voltage,batteryData.chargeTime,batteryData.soc/100,batteryData.incrementCap);
         }
 
         runTime++,runTime %= 180;

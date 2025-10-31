@@ -4,7 +4,23 @@
 #include "configJson.h"
 
 
-static char *TAG = "PRJ_devConfig";
+static char *TAG = "PRJ_DEVCONFIG";
+
+#define PRJ_DEVCONFIG_LOG_ENABLE      1                     //soh log enable
+#if PRJ_DEVCONFIG_LOG_ENABLE
+#define PRJ_DEVCONFIG_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_DEVCONFIG_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_DEVCONFIG_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_DEVCONFIG_PRINTF(x,...)          
+#define PRJ_DEVCONFIG_LOGI(format, ...)       
+#define PRJ_DEVCONFIG_LOGW(format, ...)       
+#endif
+
+#define PRJ_DEVCONFIG_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+
 
 static char *devConfigFlie = "/littlefs/devConfig.text";
 
@@ -40,7 +56,7 @@ void devConfig_mac_read(void)
         }
         p += n;
     }
-    printf("MAC: %s\n", mac_str);
+    PRJ_DEVCONFIG_PRINTF("MAC: %s\n", mac_str);
     strncpy(devMac,mac_str,sizeof(devMac));
     modbus_reg_write_no_reverse(DEVCONFIG_MAC_REG,(uint16_t *)devMac,(sizeof(devMac)+1)/2);
 }
@@ -56,13 +72,13 @@ void devConfig_default_init(void){
 void devConfig_save(void){
     FILE* file = fopen(devConfigFlie, "w");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open devConfigFlie for writing!");
+        PRJ_DEVCONFIG_LOGE("Failed to open devConfigFlie for writing!");
         return;
     }else{;}
 
     size_t write_num = fwrite(&devCfg, 1, sizeof(devCfg), file);
     if(write_num != sizeof(devCfg)){
-        ESP_LOGE(TAG, "Failed to write devConfig file!");
+        PRJ_DEVCONFIG_LOGE("Failed to write devConfig file!");
         fclose(file);
         return;
     }else{;}
@@ -75,7 +91,7 @@ bool devConfig_file_read(void){
     bool ret = false;
     FILE* file = fopen(devConfigFlie, "rb");
     if(file == NULL){
-        ESP_LOGE(TAG, "Failed to open devConfigFlie!");
+        PRJ_DEVCONFIG_LOGE("Failed to open devConfigFlie!");
         return ret;
     }else{;}
 
@@ -83,7 +99,7 @@ bool devConfig_file_read(void){
     size_t size = ftell(file);
     rewind(file);
     if(size != sizeof(devConfig_t)){
-        ESP_LOGE(TAG, "devConfig file size error!");
+        PRJ_DEVCONFIG_LOGE("devConfig file size error!");
         fclose(file);
         return ret;
     }else{;}
@@ -91,7 +107,7 @@ bool devConfig_file_read(void){
 	uint8_t *data = heap_caps_malloc(size, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
     size_t read_num = fread(data, 1, size, file);
     if(read_num != size){
-        ESP_LOGE(TAG, "Failed to read devConfig file!");
+        PRJ_DEVCONFIG_LOGE("Failed to read devConfig file!");
         heap_caps_free(data);
         fclose(file);
         return ret;
@@ -107,7 +123,7 @@ bool devConfig_file_read(void){
 void devConfig_modbus_id_get_from_configJson(void){
     //判断序列号
     if(devCfg.serial[0] == '\0'){
-        ESP_LOGE(TAG, "devCfg.serial is empty!");
+        PRJ_DEVCONFIG_LOGE("devCfg.serial is empty!");
         return;
     }
 
@@ -160,7 +176,7 @@ void devConfig_check(void)
     if(0 != memcmp(&devCfg,config_data,48)){
         memcpy(&devCfg,config_data,48);
         devConfig_save();
-        ESP_LOGI(TAG, "reset config success, mac:%s, serial:%s",devMac,devCfg.serial);
+        PRJ_DEVCONFIG_LOGI("reset config success, mac:%s, serial:%s",devMac,devCfg.serial);
     }
 }
 

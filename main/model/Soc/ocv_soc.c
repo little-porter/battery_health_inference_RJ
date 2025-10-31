@@ -1,5 +1,22 @@
 #include "ocv_soc.h"
 
+static const char *TAG = "PRJ_OCV_SOC";
+
+#define PRJ_OCV_SOC_LOG_ENABLE      0                     //soh log enable
+#if PRJ_OCV_SOC_LOG_ENABLE
+#define PRJ_OCV_SOC_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_OCV_SOC_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_OCV_SOC_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_OCV_SOC_PRINTF(x,...)          
+#define PRJ_OCV_SOC_LOGI(format, ...)       
+#define PRJ_OCV_SOC_LOGW(format, ...)       
+#endif
+
+#define PRJ_OCV_SOC_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+
 #define OCV_SOC_TABLE_SIZE 21
 
 float ocv_soc_table[OCV_SOC_TABLE_SIZE][2] ={
@@ -31,7 +48,7 @@ float ocv_soc_get(float openVoltage)
         currentSoc = (openVoltage - ocv_soc_table[index][1])*(ocv_soc_table[index-1][0]-ocv_soc_table[index][0])/(ocv_soc_table[index-1][1]-ocv_soc_table[index][1])+ocv_soc_table[index][0];
     }
 
-    ESP_LOGE("SOC","index:%d",index);
+    PRJ_OCV_SOC_LOGW("index:%d",index);
     return currentSoc;
 }
 

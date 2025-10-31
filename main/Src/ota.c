@@ -6,7 +6,7 @@
 
 #include "modbus.h"
 
-#define REG_OTA_START_FLAG 		0x200F
+#define REG_OTA_START_FLAG 		0x2014
 #define REG_OTA_VERSION_YEAR 	0x3000
 #define REG_OTA_VERSION_MONTH 	0x3001
 #define REG_OTA_VERSION_DAY 	0x3002
@@ -16,8 +16,23 @@
 #define OTA_OUT_TIME_MS	   		10000
 
 static const char *TAG = "PRJ_OTA";
-static const char *app_name = "battery_inference_ota";
 
+#define PRJ_OTA_LOG_ENABLE      0                     //OTA升级日志使能
+
+#if PRJ_OTA_LOG_ENABLE
+#define PRJ_OTA_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_OTA_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_OTA_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_OTA_PRINTF(x,...)          
+#define PRJ_OTA_LOGI(format, ...)       
+#define PRJ_OTA_LOGW(format, ...)       
+#endif
+
+#define PRJ_OTA_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
+static const char *app_name = "battery_inference_ota";
 static const char *ota_flie = "ota_info.text";
 
 typedef enum _ota_run_app{
@@ -34,8 +49,8 @@ typedef enum _ota_process{
 }ota_process_t;
 
 typedef enum _ota_status{ 
-	OTA_STATUS_UPGRADING = 0,
-	OTA_STATUS_FINISH = 1,
+	OTA_STATUS_FINISH = 0,
+	OTA_STATUS_UPGRADING = 1,
 	OTA_STATUS_BIN_ERROR,
 	OTA_STATUS_VERSION_ERROR,
 	OTA_STATUS_CRC_ERROR,
@@ -99,9 +114,9 @@ void app_info_check(void)
 		// run_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"app1");
 		if(run_partition){
 			if(esp_ota_get_partition_description(run_partition,&run_app_info) == ESP_OK){
-				ESP_LOGI(TAG,"run_app_info.version:%s\r\n",run_app_info.version);
-				ESP_LOGI(TAG,"run_app_info.project_name:%s\r\n",run_app_info.project_name);
-				if(0 != strcmp(run_app_info.project_name,app_name)){						//判断运�?�APP�?件名�?
+				PRJ_OTA_LOGI("run_app_info.version:%s\r\n",run_app_info.version);
+				PRJ_OTA_LOGI("run_app_info.project_name:%s\r\n",run_app_info.project_name);
+				if(0 != strcmp(run_app_info.project_name,app_name)){						//判断运�?�APP�?件名�?
 					 
 				}
 			}
@@ -110,8 +125,8 @@ void app_info_check(void)
 		// run_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"app2");
 		if(run_partition){
 			if(esp_ota_get_partition_description(run_partition,&run_app_info) == ESP_OK){
-				ESP_LOGI(TAG,"run_app_info.version:%s\r\n",run_app_info.version);
-				ESP_LOGI(TAG,"run_app_info.project_name:%s\r\n",run_app_info.project_name);
+				PRJ_OTA_LOGI("run_app_info.version:%s\r\n",run_app_info.version);
+				PRJ_OTA_LOGI("run_app_info.project_name:%s\r\n",run_app_info.project_name);
 			}
 		}
 	}else{;}
@@ -178,13 +193,13 @@ bool ota_info_head_check(void)
 	bool ret = false;
 	int size = sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
 	uint32_t read_bytes = 0;
-	/*获取校验�? */
+	/*获取校验�? */
 	read_bytes = ota_fifo_data_bytes_read(&app_fifo);
 	vTaskDelay(pdMS_TO_TICKS(10));
 	if(read_bytes < size){
-		ret = false;			/*校验头不�?*/
+		ret = false;			/*校验头不�?*/
 	} else{
-		ret = true;				/*校验头全�?*/
+		ret = true;				/*校验头全�?*/
 	}
 	return ret;
 	
@@ -208,12 +223,12 @@ bool ota_info_check(void)
 			return ret;
 		}	
 
-		/*校验成功，开始写�?*/
+		/*校验成功，开始写�?*/
 		// ota_info.ota_partition = esp_ota_get_next_update_partition(NULL);
 		// ESP_ERROR_CHECK(esp_ota_begin(ota_info.ota_partition, OTA_SIZE_UNKNOWN, &ota_info.ota_handle));
 		ESP_ERROR_CHECK(esp_ota_write(ota_info.ota_handle, data, size));
 		ota_info.app1_size += read_bytes;
-		ESP_LOGI(TAG, "ota_write_data: %d", (int)ota_info.app1_size);
+		PRJ_OTA_LOGI("ota_write_data: %d", (int)ota_info.app1_size);
 		ret = true;
 		heap_caps_free(data);
 		return ret;
@@ -233,7 +248,7 @@ bool ota_process_upgrading(void)
 		esp_ota_write(ota_info.ota_handle, read_data, read_bytes);
 		ota_info.app1_size += read_bytes;
 		ret = true;
-		ESP_LOGI(TAG, "ota_write_data: %d", (int)ota_info.app1_size);
+		PRJ_OTA_LOGI("ota_write_data: %d", (int)ota_info.app1_size);
 	}else{;}
 	vTaskDelay(pdMS_TO_TICKS(10));
 	return ret;
@@ -268,7 +283,7 @@ bool ota_data_crc(void)
 		}	
 	}
 
-	printf("crc:%x,cal_crc:%x,cal_num:%d\r\n",crc,cal_crc,cal_num);
+	PRJ_OTA_PRINTF("crc:%x,cal_crc:%x,cal_num:%d\r\n",crc,cal_crc,cal_num);
 	if(ota_info.upgrade_size != ota_info.app1_size){
 		ret = false;
 	}else{;}
@@ -308,7 +323,7 @@ void ota_out_times_reload(void)
 
 void ota_task_handler(void *param)
 {
-	ESP_LOGI(TAG,"ota_task_running...");
+	PRJ_OTA_LOGI("ota_task_running...");
 	while(1){
 		switch (ota_info.process)
 		{
@@ -324,7 +339,7 @@ void ota_task_handler(void *param)
 				app_fifo.tail = 0;
 				ota_out_times_reload();
 				ESP_ERROR_CHECK(esp_ota_begin(ota_info.ota_partition, OTA_WITH_SEQUENTIAL_WRITES, &ota_info.ota_handle));
-				ESP_LOGI(TAG,"ota process start...");
+				PRJ_OTA_LOGI("ota process start...");
 			}else{;}
 			break;
 		case OTA_PROCESS_START:
@@ -332,13 +347,13 @@ void ota_task_handler(void *param)
 				if(ota_info_check()){
 					ota_info.process = OTA_PROCESS_UPGRADING;
 					ota_out_times_reload();
-					ESP_LOGI(TAG,"ota head check success...");
+					PRJ_OTA_LOGI("ota head check success...");
 				}else{
 					ota_process_end();
 					ota_info.process = OTA_PROCESS_IDLE;
 					ota_info.status = OTA_STATUS_BIN_ERROR;
 					modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
-					ESP_LOGI(TAG,"ota head check fail...");
+					PRJ_OTA_LOGI("ota head check fail...");
 				}
 			}else{
 				if(ota_out_times_check()){
@@ -346,7 +361,7 @@ void ota_task_handler(void *param)
 					ota_info.process = OTA_PROCESS_IDLE;
 					ota_info.status = OTA_STATUS_TIMEOUT;
 					modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
-					ESP_LOGI(TAG,"ota out time...");
+					PRJ_OTA_LOGI("ota out time...");
 				}
 			}
 			break;
@@ -356,7 +371,7 @@ void ota_task_handler(void *param)
 				ota_info.process = OTA_PROCESS_IDLE;
 				ota_info.status = OTA_STATUS_BIN_ERROR;
 				modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
-				ESP_LOGI(TAG,"ota out time...");
+				PRJ_OTA_LOGI("ota out time...");
 			}else{;}
 
 			if(ota_process_upgrading()){				//升级数据处理	
@@ -367,21 +382,21 @@ void ota_task_handler(void *param)
 					ota_info.process = OTA_PROCESS_IDLE;
 					ota_info.status = OTA_STATUS_TIMEOUT;
 					modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
-					ESP_LOGI(TAG,"ota out time...");
+					PRJ_OTA_LOGI("ota out time...");
 				}
 			}
 			/*结束判断*/
 			if ((xEventGroupWaitBits(ota_event_group,OTA_EVENT_FINISH,pdFALSE,pdTRUE,10)&OTA_EVENT_FINISH) && (0 == ota_fifo_data_bytes_read(&app_fifo))){
 				xEventGroupClearBits(ota_event_group,0x00FFFFFFUL);
 				ota_info.process = OTA_PROCESS_FINISH;
-				ESP_LOGI(TAG,"ota process finish...");
+				PRJ_OTA_LOGI("ota process finish...");
 				ota_process_end();
 			}else{;}
 			break;
 		case OTA_PROCESS_FINISH: 
  			if(ota_data_crc()){
 				esp_ota_set_boot_partition(ota_info.ota_partition);
-				ESP_LOGI(TAG,"ota success ,restart system...");
+				PRJ_OTA_LOGI("ota success ,restart system...");
 				ota_info.status = OTA_STATUS_FINISH;
 				modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
 				esp_restart();
@@ -389,7 +404,7 @@ void ota_task_handler(void *param)
 				ota_info.process = OTA_PROCESS_IDLE;
 				ota_info.status = OTA_STATUS_CRC_ERROR;
 				modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
-				ESP_LOGI(TAG,"ota crc check fail...");
+				PRJ_OTA_LOGI("ota crc check fail...");
 			}
 			break;
 		default:
@@ -401,14 +416,14 @@ void ota_task_handler(void *param)
 }
 
 
-// 将版�?字�?�串解析为整数，例�?? "1.2.3" -> 0x010203
+// 将版�?字�?�串解析为整数，例�?? "1.2.3" -> 0x010203
 unsigned int ota_parse_version(const char *version_str) {
     unsigned int major = 0, minor = 0, patch = 0;
     sscanf(version_str, "%u.%u.%u", &major, &minor, &patch);
     return (major << 16) | (minor << 8) | patch;
 }
 
-// 比较两个版本字�?�串
+// 比较两个版本字�?�串
 int ota_compare_versions(const char *v1, const char *v2) {
     unsigned int ver1 = ota_parse_version(v1);
     unsigned int ver2 = ota_parse_version(v2);
@@ -423,15 +438,15 @@ void ota_read_running_app_version(void)
 	esp_partition_t *running_partition = esp_ota_get_running_partition();
 	esp_app_desc_t running_app_info;
 	if(esp_ota_get_partition_description(running_partition,&running_app_info) == ESP_OK){
-		ESP_LOGI(TAG,"running_app_info.version:%s\r\n",running_app_info.version);
-		ESP_LOGI(TAG,"running_app_info.project_name:%s\r\n",running_app_info.project_name);
+		PRJ_OTA_LOGI("running_app_info.version:%s\r\n",running_app_info.version);
+		PRJ_OTA_LOGI("running_app_info.project_name:%s\r\n",running_app_info.project_name);
 	}
 	uint32_t version = ota_parse_version(running_app_info.version);
 	uint16_t version_aa = (version >> 16) & 0xff;
 	uint16_t version_bb = (version >> 8) & 0xff;
 	uint16_t version_cc = (version >> 0) & 0xff;
 	uint16_t version_year = 2025;		//日期为台
-	uint16_t version_month = 8;				//日期�?
+	uint16_t version_month = 8;				//日期�?
 	uint16_t version_day = 26;				//
 	modbus_reg_write(REG_OTA_VERSION_YEAR,&version_year,1);
 	modbus_reg_write(REG_OTA_VERSION_MONTH,&version_month,1);
@@ -457,9 +472,9 @@ void ota_init(void)
 	/*加载ota信息*/
 	ota_info_load();
 	ota_info.process = OTA_PROCESS_IDLE;
-	/*保存版本信息到modbus寄存�?*/
+	/*保存版本信息到modbus寄存�?*/
 	ota_read_running_app_version();
-	/*状态信�?保存到modbus寄存�?*/
+	/*状态信�?保存到modbus寄存�?*/
 	ota_info.status = OTA_STATUS_FINISH;
 	modbus_reg_write(REG_OTA_START_FLAG,&ota_info.status,1);
 	/*创建超时检测定时器*/
@@ -484,7 +499,7 @@ void ota_data_deal_handler(uint8_t *pdata,uint16_t num)
     uint8_t  frm_type = pdata[2];
     if(frm_type != 0x01 )        return;
 
-    if(frm_flag == 0x00){       //升级开始标�?
+    if(frm_flag == 0x00){       //升级开始标�?
         xEventGroupSetBits(ota_event_group,OTA_EVENT_START);
 		ota_info.upgrade_size = (pdata[8]<<0) | (pdata[9]<<8) | (pdata[10]<<16) |(pdata[11]<<24) ;
         return;
@@ -493,7 +508,7 @@ void ota_data_deal_handler(uint8_t *pdata,uint16_t num)
     }else if(frm_flag == 0x11){ //升级结束标志
         xEventGroupSetBits(ota_event_group,OTA_EVENT_FINISH);
         ota_info.upgrade_crc = (pdata[8]<<0) | (pdata[9]<<8);
-        // ESP_LOGI("OTA_CRC", "OTA_CRC:0x%x",(pdata[9]<<8) | pdata[8]);
+        // PRJ_OTA_LOGI("OTA_CRC", "OTA_CRC:0x%x",(pdata[9]<<8) | pdata[8]);
         return;
     }else{return;}
 
@@ -501,7 +516,7 @@ void ota_data_deal_handler(uint8_t *pdata,uint16_t num)
 		ota_data_write_to_fifo(&pdata[8],data_num);
 	}else{;}
     
-    // printf("OTA_PUSH_DATA: %d\n",data_num);
+    // PRJ_OTA_PRINTF("OTA_PUSH_DATA: %d\n",data_num);
 }
 
 

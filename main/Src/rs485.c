@@ -3,6 +3,21 @@
 
 static const char *TAG = "PRJ_RS485";
 
+#define PRJ_RS485_LOG_ENABLE      0                     //OTA升级日志使能
+
+#if PRJ_RS485_LOG_ENABLE
+#define PRJ_RS485_PRINTF(x,...)           printf(x,##__VA_ARGS__)
+#define PRJ_RS485_LOGI(format, ...)       ESP_LOGI(TAG,format, ##__VA_ARGS__)
+#define PRJ_RS485_LOGW(format, ...)       ESP_LOGW(TAG,format, ##__VA_ARGS__)
+#else
+#define PRJ_RS485_PRINTF(x,...)          
+#define PRJ_RS485_LOGI(format, ...)       
+#define PRJ_RS485_LOGW(format, ...)       
+#endif
+
+#define PRJ_RS485_LOGE(format, ...)       ESP_LOGE(TAG,format, ##__VA_ARGS__)
+
+
 #define RS485_UART_PORT     UART_NUM_2
 #define RS485_UART_BAUD     115200
 #define RS485_UART_TX_PIN   GPIO_NUM_16
@@ -41,6 +56,7 @@ void rs485_uart_init(rs485_driver_t *rs485_drv)
 
     /*璁剧疆瓒呮椂鏃堕棿锛岃繛缁?5涓?瀛楃?︽病鎺ユ敹鍒版暟鎹?锛岃Е鍙慤ART_DATA浜嬩欢 */
     // uart_set_rx_timeout(RS485_UART_PORT, 5);
+    // uart_set_rx_timeout(RS485_UART_PORT, 2);
 
     //涓?鏂?浣胯兘
     // // uart_clear_intr_status(RS485_UART_PORT, UART_INTR_RXFIFO_FULL | UART_INTR_RXFIFO_TOUT);
@@ -52,9 +68,10 @@ void rs485_uart_init(rs485_driver_t *rs485_drv)
     // // 浣胯兘UART涓?鏂?
     // uart_int_enable(RS485_UART_PORT);
 
-    if(rs485_drv->uart_queue == NULL)
-    {
-        ESP_LOGE(TAG, "uart driver install failed");
+    if(rs485_drv->uart_queue == NULL){
+        PRJ_RS485_LOGE("uart driver install failed!");
+    }else{
+        PRJ_RS485_LOGI("uart driver install success!");
     }
 }
 
@@ -79,9 +96,9 @@ void rs485_driver_init(rs485_driver_t *rs485_drv)
     gpio_config(&io_conf);
 
     // xTaskCreatePinnedToCore(rs485_send_task_handler,"rs485_send_task",1024*2,rs485_drv,5,NULL,0);
-    xTaskCreatePinnedToCore(rs485_recive_task_handler,"rs485RecTask",1024*5,rs485_drv,6,NULL,0);
+    xTaskCreatePinnedToCore(rs485_recive_task_handler,"rs485RecTask",1024*5,rs485_drv,10,NULL,0);
 
-    ESP_LOGI(TAG,"RS485 init success!");
+    PRJ_RS485_LOGI("RS485 init success!");
     // uint8_t msg[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x01, 0x0A ,0x84};
 
     // rs485_data_send(msg,8);
@@ -153,16 +170,19 @@ void rs485_recive_task_handler(void *pvParameters)
                             }
                             if(0 == rx_bytes){
                                 uart_get_buffered_data_len(rs485_drv->uart_port,&buffered_size);
-                                ESP_LOGW(TAG, "RS485 recive data len:%d",buffered_size);
+                                PRJ_RS485_LOGW("RS485 recive data len:%d",buffered_size);
                                 reply--;
                                 if(reply == 0) {break;}else {continue;}
                             }  
                             modbus_msg_deal_handler(rx_data,rx_bytes);
                             uart_get_buffered_data_len(rs485_drv->uart_port,&buffered_size);
-                            // ESP_LOGW(TAG, "RS485 recive data len:%d",rx_bytes);
+                            // PRJ_RS485_LOGW(TAG, "RS485 recive data len:%d",rx_bytes);
                         }
                     }
-
+                break;
+                case UART_FIFO_OVF:
+                    PRJ_RS485_LOGE("UART FIFO overflow!");
+                    uart_flush(rs485_drv->uart_port); // 清空当前 FIFO 中所有数据（包括无效数据）
                 break;
                 default:
                 break;
